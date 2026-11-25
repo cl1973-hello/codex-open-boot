@@ -33,7 +33,10 @@ const DEFAULT_SETTINGS = {
     endMode: 'fill', // fill（铺满工作区）| keep（保持 Codex 原尺寸）
   },
   ui: {
-    onboardedAt: null,
+    // 只用来记住「已经问过要不要接管 Codex 快捷方式」，避免每次启动都弹窗。
+    // 1.0 的 onboardedAt 是另一回事（看过三步引导），刻意不复用这个字段：
+    // 否则升级上来的用户会因为旧时间戳而永远看不到 2.0 的接管询问。
+    entryAskedAt: null,
   },
 };
 
@@ -114,7 +117,7 @@ function sanitizeSettings(raw) {
       endMode: win.endMode === 'keep' ? 'keep' : 'fill',
     },
     ui: {
-      onboardedAt: typeof ui.onboardedAt === 'string' ? ui.onboardedAt : null,
+      entryAskedAt: typeof ui.entryAskedAt === 'string' ? ui.entryAskedAt : null,
     },
   };
 }

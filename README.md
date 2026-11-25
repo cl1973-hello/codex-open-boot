@@ -109,6 +109,7 @@ Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺�
 | Codex | 微软商店版（MSIX，包名 `OpenAI.Codex`） |
 | 权限 | 普通用户即可 |
 | 依赖 | 无。不需要 Node、不需要装驱动 |
+| 显示 | 已在 2560×1368 @165% 单显示器验证；多显示器 / 混合 DPI 未测试 |
 
 ---
 
@@ -163,6 +164,7 @@ npm start            # 构建渲染层 + 启动（会重启一次 Codex）
 npm run dev          # 改渲染层自动重编译、改主进程自动重启
 npm test             # 纯函数单测：几何映射、矩形、token 生成、设置钳制
 npm run probe        # 端到端测量
+npm run check:entry  # 在临时目录里真建一遍 Codex.lnk，不动你的桌面
 npm run pack         # 免安装目录
 npm run dist         # portable + nsis 安装包
 ```

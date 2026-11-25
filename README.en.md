@@ -109,6 +109,7 @@ Facts that came out of the M0 spikes (full log in [`.m0/M0-REPORT.md`](.m0/M0-RE
 | Codex | Microsoft Store build (MSIX, package name `OpenAI.Codex`) |
 | Privileges | Standard user is enough |
 | Dependencies | None. No Node, no drivers |
+| Display | Verified on a single 2560×1368 @165%; multi-monitor / mixed DPI untested |
 
 ---
 
@@ -163,6 +164,7 @@ npm start            # build renderer + launch (this restarts Codex once)
 npm run dev          # rebuild renderer / restart main on change
 npm test             # pure-function tests: geometry, rects, token generation, settings clamping
 npm run probe        # end-to-end measurement
+npm run check:entry  # really creates a Codex.lnk, but in a temp folder (your desktop is untouched)
 npm run pack         # unpacked directory
 npm run dist         # portable + nsis installer
 ```

@@ -22,6 +22,8 @@
 - `src/main/entry.js`：创建 / 移除指向本程序的 `Codex.lnk`，优先使用 Codex 官方图标，已存在的非本程序快捷方式先备份为 `.cob-backup`。
 - `src/main/tray.js`：托盘菜单（重播开屏 / 恢复 Codex 窗口尺寸 / 设置 / 创建或移除快捷方式 / 打开日志 / 打开数据目录 / 退出）。
 - `src/main/probe.js` + `npm run probe`：端到端取证。跑一次完整开屏，输出入场时间、入场矩形、尾段时长、主题注入页面数，以及视频矩形在渲染层与主进程两侧算出的偏差（验收要求 ≤2px，实测 0.0px）。
+- 首次运行问一次「要不要接管桌面 / 开始菜单的 Codex 入口」，答完就记住（`ui.entryAskedAt`），不再纠缠；已经指向本程序的快捷方式会跳过询问。
+- `npm run check:entry`：把桌面与 `appData` 重定向到临时目录，真建一遍 `Codex.lnk` 并验证图标提取、目标读回、删除保护 —— 不动用户自己的桌面。
 - 设置面板重写（`panel.html` / `panel.js` / `panel.css`）：三套皮肤、背景图（不透明度 / 模糊 / 遮罩 / 暗角）、开屏音量、入场后慢放、结束时窗口大小。改动 160ms 防抖后即时推给已打开的 Codex，不需要重启。
 - 背景图通过 `data:` URL 注入（Codex 的 CSP 里 `img-src` 没有 `file:`），图片以 sha1 命名复制进用户数据目录。
 - `COB_DEBUG_PORT=9333` 可开本程序自身的 CDP，用 Chrome 调试开屏页。
@@ -44,6 +46,7 @@
 - 页面外框 `div[data-app-shell-frame]` 的 `background-image` 是写死的 `linear-gradient()`，不是语义 token，必须单独接管，否则主内容区永远是中性灰。
 - Electron 按 DIP 建窗口、Chromium 按取整后的 `devicePixelRatio` 绘制，两者相差约 1%。窗口定位改用「渲染层认为的物理视口」，两侧矩形偏差从 27.4px 降到 0.0px。
 - koffi 3.x 的函数签名必须写 `koffi.struct()` 的注册名（`COB_RECT`），写本地变量名会 `Unknown or invalid type name`；`koffi.node` 必须在 `asarUnpack` 里，否则打包版启动即崩。
+- `npm run probe` 之前其实跑不起来：根目录少算一层导致 `spawn EINVAL`，日志又按字节切片（中文被切坏）导致结果全是 `null`。两处都已修，现在能稳定输出可核对的数据。
 
 ### 工程
 

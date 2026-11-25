@@ -17,6 +17,7 @@
     "build:renderer": "node scripts/build-renderer.mjs",
     "test": "node --test test/geometry.test.js test/validate.test.js test/portal.test.js test/theme-css.test.js",
     "probe": "node scripts/probe.mjs",
+    "check:entry": "electron scripts/check-entry.cjs",
     "pack": "npm run build:renderer && electron-builder --win --dir",
     "dist": "npm run build:renderer && electron-builder --win"
   },

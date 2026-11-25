@@ -7,10 +7,11 @@
 
 ```bash
 npm install
-npm run dev      # 改渲染层自动重编译，改主进程自动重启
-npm test         # 39 个单元测试，不需要图形界面
-npm run probe    # 端到端跑一次开屏并输出可核对的数据
-npm run pack     # 产出未打包的目录
+npm run dev          # 改渲染层自动重编译，改主进程自动重启
+npm test             # 39 个单元测试，不需要图形界面
+npm run probe        # 端到端跑一次开屏并输出可核对的数据
+npm run check:entry  # 在临时目录里真建一遍 Codex.lnk（不动你的桌面），验图标/读回/删除
+npm run pack         # 产出未打包的目录
 ```
 
 - `src/main/` 主进程：开屏状态机、逐帧摆窗口、CDP 注入、启动 Codex、托盘、快捷方式。

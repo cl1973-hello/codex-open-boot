@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { app, screen } = require('electron');
+const { app, screen, dialog } = require('electron');
 
 // 必须在 ready 之前：设置与素材都放 %APPDATA%\CodexOpenBoot，和安装目录无关
 app.setPath('userData', path.join(app.getPath('appData'), 'CodexOpenBoot'));
@@ -28,6 +28,7 @@ const theme = require('./theme');
 const { SettingsStore } = require('./settings-store');
 const { Boot } = require('./boot');
 const { registerIpc } = require('./ipc');
+const entry = require('./entry');
 const trayModule = require('./tray');
 const windows = require('./window');
 
@@ -77,6 +78,60 @@ function quitApp() {
   app.quit();
 }
 
+/**
+ * 首次运行问一次「要不要接管桌面/开始菜单的 Codex 入口」。
+ *
+ * 只问一次：答完（无论选哪个）就把 ui.onboardedAt 写下来。否则用户选了「以后再说」，
+ * 每次开机都弹一次。已经指向我们的快捷方式就直接跳过。
+ */
+async function maybeOfferEntry() {
+  const settings = state.store.get();
+  if (settings.ui && settings.ui.entryAskedAt) return;
+
+  let owns = false;
+  try {
+    const current = entry.status({ app });
+    owns = !!(current.ownsDesktop || current.ownsStartMenu);
+  } catch (error) {
+    logger.warn(`读取快捷方式状态失败: ${error.message}`);
+  }
+
+  if (!owns) {
+    let response = 1;
+    try {
+      const answer = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['创建「Codex」快捷方式', '以后再说'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        title: 'Codex Open Boot',
+        message: '把桌面和开始菜单的「Codex」指向本程序？',
+        detail:
+          '创建之后，双击 Codex 就是「开屏动画 → 主题化 Codex」。\n随时可以在托盘菜单里移除。',
+      });
+      response = answer.response;
+    } catch (error) {
+      logger.warn(`首次询问失败: ${error.message}`);
+    }
+
+    if (response === 0) {
+      try {
+        const result = entry.install({ app });
+        logger.info(
+          `创建快捷方式：ok=${result.ok} 数量=${result.created.length} 图标=${result.icon || '（默认）'}`,
+        );
+        if (!result.ok) logger.warn(`创建快捷方式失败：${result.reason}`);
+      } catch (error) {
+        logger.warn(`创建快捷方式异常: ${error.message}`);
+      }
+    }
+  }
+
+  state.store.patch({ ui: { entryAskedAt: new Date().toISOString() } });
+  state.store.saveNow();
+}
+
 async function start() {
   const userData = app.getPath('userData');
   logger.init(userData);
@@ -107,6 +162,15 @@ async function start() {
   if (process.argv.includes('--panel')) {
     openPanel();
     return;
+  }
+
+  // 探针只关心动画与注入，不要弹窗打断
+  if (!process.env.COB_PROBE) {
+    try {
+      await maybeOfferEntry();
+    } catch (error) {
+      logger.warn(`首启询问失败: ${error.message}`);
+    }
   }
 
   const result = await state.boot.run({ reason: 'launch' });
