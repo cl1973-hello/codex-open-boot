@@ -22,6 +22,18 @@ function enabled() {
   return !!process.env.COB_PROBE;
 }
 
+/**
+ * 截图默认关闭，必须 COB_PROBE_SHOTS=1 才开。
+ *
+ * 原因是实测出来的：`desktopCapturer.getSources()` 在这台机器上要卡住主进程 2 秒左右，
+ * 而入场恰好是最需要观测的时刻 —— 那 2 秒里 splash:frame 全被堵在队列里，
+ * 停帧兜底先醒过来，把尾段压成 400ms。测出来的「卡顿」其实是探针自己造成的。
+ * 所以数值取证默认不做截图，只有确定截图不吃时间（或愿意接受动画被拖慢）时才开。
+ */
+function shotsEnabled() {
+  return process.env.COB_PROBE_SHOTS === '1';
+}
+
 function init() {
   if (!enabled()) return;
   dir = process.env.COB_PROBE;
@@ -30,38 +42,36 @@ function init() {
   } catch {
     dir = null;
   }
-  logger.info(`开屏取证开启 -> ${dir}`);
+  logger.info(`开屏取证开启 -> ${dir}${shotsEnabled() ? '（含截图）' : '（仅数值，截图需 COB_PROBE_SHOTS=1）'}`);
 }
 
-/** 记一条带截图的事件 */
+/** 记一条事件；开了截图才顺手拍一张 */
 async function mark(label, data) {
   if (!dir) return null;
   seq += 1;
   const record = { seq, label, at: new Date().toISOString(), ...data };
   events.push(record);
 
-  try {
-    if (shotsBlocked) throw new Error('截图已被系统策略拦截，本次运行不再尝试');
-    // 用缩略尺寸而不是整屏：getSources 拿到 2560×1440 会卡住主进程几百毫秒，
-    // 进而拖慢 splash:frame 的处理，动画自己就被取证搞歪了
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1280, height: 720 },
-    });
-    const source = sources[0];
-    if (!source) {
-      throw new Error('没有屏幕源');
+  if (shotsEnabled()) {
+    try {
+      if (shotsBlocked) throw new Error('截图已被系统策略拦截，本次运行不再尝试');
+      // 用缩略尺寸而不是整屏：getSources 拿到 2560×1440 会卡住主进程几百毫秒，
+      // 进而拖慢 splash:frame 的处理，动画自己就被取证搞歪了
+      const sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 1280, height: 720 },
+      });
+      const source = sources[0];
+      if (!source) throw new Error('没有屏幕源');
+      if (source.thumbnail.isEmpty()) throw new Error('缩略图为空（可能被安全策略拦截）');
+      const file = path.join(dir, `${String(seq).padStart(2, '0')}-${label}.png`);
+      fs.writeFileSync(file, source.thumbnail.toPNG());
+      record.shot = path.basename(file);
+    } catch (error) {
+      record.shotError = error.message;
+      // 一次拿不到就别再试了：每次尝试都会把主进程卡住几秒，反而毁掉要观测的动画
+      shotsBlocked = true;
     }
-    if (source.thumbnail.isEmpty()) {
-      throw new Error('缩略图为空（可能被安全策略拦截）');
-    }
-    const file = path.join(dir, `${String(seq).padStart(2, '0')}-${label}.png`);
-    fs.writeFileSync(file, source.thumbnail.toPNG());
-    record.shot = path.basename(file);
-  } catch (error) {
-    record.shotError = error.message;
-    // 一次拿不到就别再试了：每次尝试都会把主进程卡住几秒，反而毁掉要观测的动画
-    shotsBlocked = true;
   }
 
   try {

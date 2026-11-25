@@ -10,7 +10,9 @@
  *   npm run probe              # 默认跑一次
  *   npm run probe -- --panel    # 只打开设置面板
  *
- * 注意：探针会用到整屏截图，部分机器上被安全策略拦截，此时只输出数值不走图像。
+ * 注意：默认不截图。`desktopCapturer.getSources()` 在部分机器上会卡住主进程约 2 秒，
+ * 正好把入场那一帧堵住，测出来的尾段会被停帧兜底压短 —— 那是探针自己造成的假象。
+ * 需要截图时显式开 `COB_PROBE_SHOTS=1`，并接受动画可能被拖慢。
  */
 
 import { spawn } from 'node:child_process';

@@ -47,6 +47,8 @@
 - Electron 按 DIP 建窗口、Chromium 按取整后的 `devicePixelRatio` 绘制，两者相差约 1%。窗口定位改用「渲染层认为的物理视口」，两侧矩形偏差从 27.4px 降到 0.0px。
 - koffi 3.x 的函数签名必须写 `koffi.struct()` 的注册名（`COB_RECT`），写本地变量名会 `Unknown or invalid type name`；`koffi.node` 必须在 `asarUnpack` 里，否则打包版启动即崩。
 - `npm run probe` 之前其实跑不起来：根目录少算一层导致 `spawn EINVAL`，日志又按字节切片（中文被切坏）导致结果全是 `null`。两处都已修，现在能稳定输出可核对的数据。
+- 探针的整屏截图会卡住主进程约 2 秒，恰好压在入场那一帧上，导致测出来的尾段被停帧兜底压成 400ms —— 看起来像产品卡顿，其实是取证自己造成的。截图改成 `COB_PROBE_SHOTS=1` 才开，默认只取数值。修完实测尾段 709ms（自然时长）、全程 14.2s。
+- 视频末尾解码器会提前停止送帧，`requestVideoFrameCallback` 不再回调，主进程只能等停帧兜底。开屏页补了 `ended` + 播放头定时补报，尾段按自然时长收，不再被压短。
 
 ### 工程
 

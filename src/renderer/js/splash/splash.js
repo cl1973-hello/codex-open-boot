@@ -115,6 +115,27 @@ async function start() {
     window.bridge.failed('video-error');
   });
 
+  // 视频比 theme.json 里的 transitionEnd 先结束（素材被换成更短的一段、或解码在末尾
+  // 停止送帧）时，requestVideoFrameCallback 不再回调，主进程就永远等不到 transitionEnd，
+  // 只能等停帧兜底把尾段压成 400ms。这里补报一次结束时间，让尾段按自然时长跑完。
+  const endAt = Math.max(
+    Number(media.duration) || 0,
+    Number(media.transitionEnd) || 0,
+  );
+  const videoEnded = () => window.bridge.frame(Math.max(video.currentTime || 0, endAt));
+  video.addEventListener('ended', videoEnded);
+
+  // 光靠 'ended' 不够：解码器常在最后几帧就停止呈现，视频还没 ended、rVFC 已经不回调了，
+  // 用户看到的是「画面卡住 1~2 秒再突然收尾」。用定时器盯住播放头，到末尾就直接补报。
+  if (endAt > 0) {
+    const nearEnd = setInterval(() => {
+      if (video.ended || video.currentTime >= endAt - 0.08) {
+        clearInterval(nearEnd);
+        videoEnded();
+      }
+    }, 200);
+  }
+
   window.addEventListener('resize', place);
   place();
 

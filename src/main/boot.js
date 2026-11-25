@@ -566,17 +566,19 @@ class Boot {
 
   /** 渲染层不再送帧时兜底收尾 */
   startStallGuard() {
-    this.after(1500, () => this.checkStall());
+    this.after(900, () => this.checkStall());
   }
 
   checkStall() {
     if (this.phase !== 'running') return;
     const idle = Date.now() - (this.lastFrameAt || 0);
-    if (this.animator && this.animator.entered && !this.animator.finished && idle > 1400) {
-      logger.warn('渲染层停帧，强制收尾动画');
-      this.animator.runTail(400);
+    // 门限别太长：视频末尾停帧时，用户看到的就是「画面卡住不动」，
+    // 1.4s 的空白比尾段被压短更难受。
+    if (this.animator && this.animator.entered && !this.animator.finished && idle > 900) {
+      logger.warn(`渲染层停帧 ${idle}ms，强制收尾动画`);
+      this.animator.runTail();
     }
-    this.after(1200, () => this.checkStall());
+    this.after(600, () => this.checkStall());
   }
 
   // ---------------------------------------------------------------- 收尾
