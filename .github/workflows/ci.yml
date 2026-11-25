@@ -41,3 +41,20 @@ jobs:
             throw 'resources/media/video.mp4 missing from the packaged app'
           }
           Get-ChildItem release/win-unpacked/resources/media | Select-Object Name, Length
+
+      - name: Check that koffi's native binary is unpacked outside the asar
+        shell: pwsh
+        run: |
+          $node = Get-ChildItem -Recurse 'release/win-unpacked/resources/app.asar.unpacked' -Filter 'koffi.node' -ErrorAction SilentlyContinue
+          if (-not $node) { throw 'koffi.node 没有被解包到 app.asar.unpacked，打包版会在启动时崩溃' }
+          $node | Select-Object FullName, Length
+
+      - name: Check that the renderer bundles are inside the asar
+        shell: pwsh
+        run: |
+          $asar = 'release/win-unpacked/resources/app.asar'
+          $list = & npx asar list $asar
+          foreach ($f in @('splash.bundle.js', 'panel.bundle.js', 'panel.html', 'index.html')) {
+            if (-not ($list -match [regex]::Escape($f))) { throw "$f 不在 asar 里" }
+          }
+          'bundles ok'

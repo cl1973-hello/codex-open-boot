@@ -1,0 +1,81 @@
+{
+  "pid": 7580,
+  "hwnd": "5572368",
+  "windows": [
+    {
+      "hwnd": 5572368,
+      "cls": "Chrome_WidgetWin_1",
+      "title": "ChatGPT",
+      "visible": true
+    },
+    {
+      "hwnd": 2426736,
+      "cls": "Chrome_WidgetWin_0",
+      "title": "",
+      "visible": false
+    },
+    {
+      "hwnd": 3801314,
+      "cls": "OwlElectron_NotifyIconHostWindow",
+      "title": "",
+      "visible": false
+    },
+    {
+      "hwnd": 6031196,
+      "cls": "Base_PowerMessageWindow",
+      "title": "",
+      "visible": false
+    },
+    {
+      "hwnd": 1706606,
+      "cls": "Chrome_WidgetWin_0",
+      "title": "",
+      "visible": false
+    },
+    {
+      "hwnd": 657682,
+      "cls": "MSCTFIME UI",
+      "title": "MSCTFIME UI",
+      "visible": false
+    },
+    {
+      "hwnd": 2361074,
+      "cls": "IME",
+      "title": "Default IME",
+      "visible": false
+    }
+  ],
+  "rect": {
+    "x": 248,
+    "y": 12,
+    "w": 1861,
+    "h": 1316
+  },
+  "dwmFrame": {
+    "left": 248,
+    "top": 12,
+    "right": 2109,
+    "bottom": 1328
+  },
+  "dpi": 144,
+  "minTrack": {
+    "x": 793,
+    "y": 991
+  },
+  "maxTrack": {
+    "x": 0,
+    "y": 0
+  },
+  "clamped": true,
+  "shrunk": {
+    "w": 793,
+    "h": 991
+  },
+  "frames": {
+    "totalMs": 5.9,
+    "p50": 0.01,
+    "p95": 0.15,
+    "max": 0.37
+  },
+  "focusStolen": false
+}

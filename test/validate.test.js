@@ -79,21 +79,51 @@ test('isValidAppId only accepts Package!App identities', () => {
   assert.equal(isValidAppId(''), false);
 });
 
-test('sanitizeSettings clamps hostile values', () => {
+test('sanitizeSettings clamps hostile values (schema v2)', () => {
   const settings = sanitizeSettings({
     skinId: 'nope',
-    background: { mode: 'file', filePath: null, opacity: 7, blur: 900, scrim: 5, vignette: -3 },
-    app: { codexAppId: 'not-valid', recentProjects: ['C:\\a', 42, ''] },
-    window: { bounds: { x: 'a', y: 0, width: 10, height: 10 } },
+    background: { mode: 'file', filePath: null, opacity: 7, blur: 900, scrim: 5, vignette: -3, panelAlpha: 12 },
+    splash: { volume: 9, slowRate: 0, tailMs: 99999 },
+    codex: { launch: 'rm -rf /' },
+    window: { endMode: 'maximize' },
+    recentProjects: ['C:\\a'],
   });
+
+  // file 模式没有路径 -> 退回 builtin
   assert.equal(settings.background.mode, 'builtin');
   assert.equal(settings.background.opacity, 1);
   assert.equal(settings.background.blur, 40);
-  assert.ok(settings.background.scrim <= 0.72);
+  assert.equal(settings.background.scrim, 1);
   assert.equal(settings.background.vignette, 0);
-  assert.equal(settings.app.codexAppId, DEFAULT_SETTINGS.app.codexAppId);
-  assert.deepEqual(settings.app.recentProjects, ['C:\\a']);
-  assert.equal(settings.window.bounds, null);
+  assert.equal(settings.background.panelAlpha, 1);
+
+  assert.equal(settings.splash.volume, 1);
+  assert.equal(settings.splash.slowRate, 0.25);
+  assert.equal(settings.splash.tailMs, 3000);
+
+  assert.equal(settings.codex.launch, 'alias');
+  assert.equal(settings.window.endMode, 'fill');
+
+  assert.equal(settings.schemaVersion, 2);
+  // v1 的工作台状态必须被丢掉，不能留在 settings.json 里
+  assert.equal(settings.recentProjects, undefined);
+  assert.deepEqual(Object.keys(settings).sort(), ['background', 'codex', 'schemaVersion', 'skinId', 'splash', 'ui', 'window']);
+});
+
+test('sanitizeSettings migrates a v1 file without throwing', () => {
+  const legacy = {
+    schemaVersion: 1,
+    skinId: 'cosmic',
+    app: { codexAppId: 'OpenAI.Codex_2p2nqsd0c76g0!App', recentProjects: ['C:\\proj'] },
+    window: { bounds: { x: 10, y: 10, width: 1280, height: 800 } },
+    theme: { background: { opacity: 0.4 } },
+  };
+  const settings = sanitizeSettings(legacy);
+  assert.equal(settings.schemaVersion, 2);
+  assert.equal(settings.background.opacity, 1);
+  assert.equal(settings.background.mode, 'builtin');
+  assert.equal(settings.app, undefined);
+  assert.equal(settings.window.bounds, undefined);
 });
 
 test('requiredScrim raises the scrim until text is readable', () => {

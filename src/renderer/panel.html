@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>Codex Open Boot 设置</title>
+    <link rel="stylesheet" href="styles/panel.css" />
+  </head>
+  <body>
+    <header class="titlebar">
+      <div class="titlebar__brand">
+        <span class="dot"></span>
+        <span>Codex Open Boot</span>
+        <span class="titlebar__ver" id="version"></span>
+      </div>
+      <div class="titlebar__actions">
+        <button type="button" class="iconbtn" id="minimize" title="最小化">—</button>
+        <button type="button" class="iconbtn" id="close" title="关闭">×</button>
+      </div>
+    </header>
+
+    <main class="sheet">
+      <section class="card">
+        <h2>皮肤</h2>
+        <p class="hint">配色会直接注入 Codex 的语义 token，不修改任何界面结构。</p>
+        <div class="skins" id="skins"></div>
+        <p class="note" id="theme-note" hidden></p>
+      </section>
+
+      <section class="card">
+        <h2>背景</h2>
+        <div class="row">
+          <div class="row__label">
+            <span>背景图</span>
+            <small>图片会转成 data URL 注入（Codex 的 CSP 不允许 file:）</small>
+          </div>
+          <div class="row__control">
+            <button type="button" class="btn" id="pick-bg">选择图片…</button>
+            <button type="button" class="btn btn--ghost" id="clear-bg">清除</button>
+          </div>
+        </div>
+        <p class="fileline" id="bg-file">当前：内置（无图片）</p>
+
+        <div class="slider" data-key="opacity">
+          <label>图片不透明度<b id="opacity-v">100%</b></label>
+          <input type="range" id="opacity" min="0" max="100" step="1" />
+        </div>
+        <div class="slider" data-key="panelAlpha">
+          <label>面板不透明度<b id="panelAlpha-v">82%</b></label>
+          <input type="range" id="panelAlpha" min="35" max="100" step="1" />
+        </div>
+        <div class="slider" data-key="blur">
+          <label>背景模糊<b id="blur-v">0px</b></label>
+          <input type="range" id="blur" min="0" max="40" step="1" />
+        </div>
+        <div class="slider" data-key="scrim">
+          <label>遮罩深度<b id="scrim-v">28%</b></label>
+          <input type="range" id="scrim" min="0" max="100" step="1" />
+        </div>
+        <div class="slider" data-key="vignette">
+          <label>暗角<b id="vignette-v">45%</b></label>
+          <input type="range" id="vignette" min="0" max="100" step="1" />
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>开屏</h2>
+        <div class="row">
+          <div class="row__label">
+            <span>播放开屏动画</span>
+            <small>关掉后双击 Codex 直接启动，只注入主题</small>
+          </div>
+          <label class="switch"><input type="checkbox" id="splash-enabled" /><i></i></label>
+        </div>
+        <div class="slider" data-key="volume">
+          <label>音量<b id="volume-v">60%</b></label>
+          <input type="range" id="volume" min="0" max="100" step="1" />
+        </div>
+        <div class="slider" data-key="slowRate">
+          <label>入场后慢放<b id="slowRate-v">0.60×</b></label>
+          <input type="range" id="slowRate" min="25" max="100" step="5" />
+        </div>
+        <div class="row">
+          <div class="row__label">
+            <span>结束时窗口</span>
+            <small>铺满屏幕 = 工作区大小；保持原尺寸 = 不动 Codex 自己的窗口</small>
+          </div>
+          <div class="segmented" id="end-mode">
+            <button type="button" data-value="fill">铺满屏幕</button>
+            <button type="button" data-value="keep">保持原尺寸</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>入口</h2>
+        <p class="hint">
+          双击桌面上的「Codex」就会走开屏 + 主题。Codex 自己安装的 ChatGPT 入口不受影响。
+        </p>
+        <div class="row">
+          <div class="row__label">
+            <span>快捷方式</span>
+            <small id="entry-state">正在检查…</small>
+          </div>
+          <div class="row__control">
+            <button type="button" class="btn btn--primary" id="entry-install">创建</button>
+            <button type="button" class="btn btn--ghost" id="entry-remove">移除</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>操作</h2>
+        <div class="actions">
+          <button type="button" class="btn" id="replay">重新播放开屏</button>
+          <button type="button" class="btn" id="restore">恢复 Codex 窗口尺寸</button>
+          <button type="button" class="btn" id="open-log">打开日志</button>
+          <button type="button" class="btn" id="open-data">打开数据目录</button>
+          <button type="button" class="btn btn--danger" id="reset">恢复默认设置</button>
+        </div>
+        <pre class="diag" id="diag" hidden></pre>
+        <button type="button" class="linkbtn" id="toggle-diag">查看诊断信息</button>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" hidden></div>
+    <script src="panel.bundle.js"></script>
+  </body>
+</html>

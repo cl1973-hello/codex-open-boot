@@ -1,0 +1,14 @@
+{
+  "pass": false,
+  "beforeReload": {
+    "boot": 1,
+    "ok": "ok"
+  },
+  "sessions": [
+    {
+      "sid": "D6086B424CC6D6E492F3CB20109685A6",
+      "type": "page",
+      "url": "app://-/index.html"
+    }
+  ]
+}

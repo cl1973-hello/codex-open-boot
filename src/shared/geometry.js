@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * Pure geometry helpers shared by the renderer, the calibration HUD and the tests.
+ * Pure geometry helpers shared by the splash renderer, the window animator and the tests.
  *
- * Coordinate model (copied in spirit from the reference WPF launcher):
+ * Coordinate model:
  *  - `screenFrames` are normalised rectangles (0..1) relative to the *video frame*.
  *  - `layoutVideo()` returns where the video pixels actually land inside the window
  *    once `object-fit` has been applied (may overflow the window when fit === 'cover').
- *  - Everything else is plain CSS pixels.
+ *  - Everything else is plain physical pixels, unless the name says DIP or normalised.
  */
 
 function clamp(value, min, max) {
@@ -81,8 +81,8 @@ function clampRect(rect, cw, ch) {
 }
 
 /**
- * Integer rect + the uniform scale factor that makes a cw×ch workbench fill it.
- * `max()` keeps the workbench covering the portal (no seams), at most ~4% overscan.
+ * Integer rect + the uniform scale factor between it and a cw×ch viewport.
+ * `max()` keeps the rect covering the viewport (no seams), at most ~4% overscan.
  */
 function toPortal(rect, cw, ch) {
   const x = Math.round(rect.x);

@@ -1,446 +1,176 @@
 'use strict';
 
-const { qs, on, nextFrame } = require('../core/dom');
-const {
-  layoutVideo,
-  framesAt,
-  mapFrame,
-  clampRect,
-  toPortal,
-  tailMs,
-  lerpRect,
-  easeInOutCubic,
-} = require('../../../shared/geometry');
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /**
- * Drives the splash video and the "portal" that carries the workbench out of it.
+ * 开屏页。只做四件事：
+ *   1. 把视频摆到 portal.layoutFor() 算出来的矩形（和主进程摆放真实窗口共用同一套映射）
+ *   2. 每来一帧视频就把 currentTime 报给主进程
+ *   3. 显示 / 隐藏提示与跳过按钮
+ *   4. Esc 或点击跳过
  *
- * The workbench is mounted at its final size and uniformly scaled down into the video's
- * screen rectangle, then scaled back up — so what the user sees is a screen growing,
- * not a hole opening.
+ * 这里不关心 Codex 是否就绪：主进程会在该停的时候发 splash:hold。
  */
-class Splash {
-  constructor({ store, bridge, workbench, workbenchEl, onSettled }) {
-    this.store = store;
-    this.bridge = bridge;
-    this.workbench = workbench;
-    this.onSettled = onSettled || (() => {});
-    this.stage = qs('#stage');
-    this.splashEl = qs('#splash');
-    this.video = qs('#splash-video');
-    this.poster = qs('#splash-poster');
-    this.portal = qs('#portal');
-    this.workbenchEl = workbenchEl;
-    this.skipButton = qs('#splash-skip');
 
-    this.raf = 0;
-    this.vfcId = 0;
-    this.anchor = null;
-    this.tailing = false;
-    this.running = false;
-    this.liveShown = false;
-    this.time = 0;
-    this.cw = 0;
-    this.ch = 0;
-    this.vw = 0;
-    this.vh = 0;
-    this.layout = null;
-    this.currentRect = null;
+const { layoutFor } = require('../../../shared/portal');
+
+// 开屏页出错时窗口就是一块黑屏，主进程看不到任何东西 —— 记下来供自检读取
+window.addEventListener('error', (event) => {
+  window.__cobSplashError = String((event && event.message) || (event && event.error) || 'unknown');
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event && event.reason;
+  window.__cobSplashError = `unhandled: ${(reason && reason.message) || reason}`;
+});
+
+const frame = document.getElementById('frame');
+const poster = document.getElementById('poster');
+const video = document.getElementById('video');
+const note = document.getElementById('note');
+const skip = document.getElementById('skip');
+
+let fit = 'cover';
+let zoom = 1;
+let reportedLayout = '';
+
+function setNote(text) {
+  if (!text) {
+    note.hidden = true;
+    note.textContent = '';
+    return;
   }
+  if (note.textContent !== text) note.textContent = text;
+  note.hidden = false;
+}
 
-  /* ------------------------------ lifecycle ------------------------------ */
+/** 视频在窗口里占的矩形（CSS px），按 object-fit + zoom 计算 */
+function place() {
+  const cw = window.innerWidth;
+  const ch = window.innerHeight;
+  if (cw < 2 || ch < 2) return;
 
-  async run() {
-    const state = this.store.get();
-    const theme = state.theme;
-    const media = state.media || {};
-    if (!media.video || !theme) {
-      this.settle();
-      return;
-    }
+  const vw = video.videoWidth || 16;
+  const vh = video.videoHeight || 9;
+  const rect = layoutFor(cw, ch, vw, vh, fit, zoom);
 
-    this.theme = theme;
-    this.measure();
-    this.running = true;
-    this.liveShown = false;
-    this.tailing = false;
-    this.anchor = null;
+  frame.style.left = `${rect.x}px`;
+  frame.style.top = `${rect.y}px`;
+  frame.style.width = `${rect.w}px`;
+  frame.style.height = `${rect.h}px`;
 
-    this.stage.dataset.mode = 'splash';
-    this.portal.classList.remove('is-settled');
-    this.portal.classList.remove('is-live');
-    this.splashEl.hidden = false;
-    this.splashEl.classList.toggle('fit-contain', theme.fit === 'contain');
-    this.poster.src = media.poster || '';
-    this.skipButton.hidden = !state.settings.splash.skippable;
-
-    const video = this.video;
-    video.style.display = '';
-    video.classList.remove('is-visible');
-    video.src = media.video;
-    video.volume = state.settings.splash.volume;
-    video.muted = false;
-    video.load();
-
-    await this.gate();
-
-    // Wait one rAF so the first frame is painted before the poster fades out.
-    this.showPoster();
-
-    video.addEventListener(
-      'playing',
-      () => {
-        this.showVideo();
-        setTimeout(() => this.hidePoster(), 120);
-      },
-      { once: true }
-    );
-
-    try {
-      await video.play();
-    } catch {
-      this.settle();
-      return;
-    }
-
-    this.bindFrameCallback();
-    this.loop();
+  // 报给主进程的是归一化坐标：主进程乘自己的物理像素尺寸即可，天然跨 DPI。
+  //
+  // 但要注意 Electron 按 DIP 建窗口、Chromium 按取整后的 devicePixelRatio 绘制，
+  // 两者会差 1%（例如窗口 2588 物理px，而页面实际按 2561 物理px 绘制）。
+  // 所以除了归一化坐标，还要把「渲染层认为的物理视口」告诉主进程，它按这个映射
+  // 出来的矩形才和画面上看到的那块视频区域严丝合缝。
+  const dpr = window.devicePixelRatio || 1;
+  const payload = {
+    x: rect.x / cw,
+    y: rect.y / ch,
+    w: rect.w / cw,
+    h: rect.h / ch,
+    dpr,
+    vw: cw * dpr,
+    vh: ch * dpr,
+    px: { x: rect.x * dpr, y: rect.y * dpr, w: rect.w * dpr, h: rect.h * dpr },
+  };
+  const key = [payload.x, payload.y, payload.w, payload.h].map((n) => n.toFixed(6)).join(',');
+  if (key !== reportedLayout) {
+    reportedLayout = key;
+    window.bridge.layout(payload);
   }
+  return rect;
+}
 
-  showPoster() {
-    if (this.poster) this.poster.style.opacity = '1';
-  }
-
-  hidePoster() {
-    if (this.poster) this.poster.style.opacity = '0';
-  }
-
-  showVideo() {
-    if (this.video) this.video.classList.add('is-visible');
-  }
-
-  measure() {
-    this.cw = window.innerWidth;
-    this.ch = window.innerHeight;
-    this.vw = this.video.videoWidth || 16;
-    this.vh = this.video.videoHeight || 9;
-    const base = layoutVideo(this.cw, this.ch, this.vw, this.vh, (this.theme && this.theme.fit) || 'cover');
-    // Cropping the baked-in letterbox: zoom about the centre keeps the keyframe mapping
-    // exact because the same factor is applied to the layout rect.
-    const zoom = (this.theme && this.theme.zoom) || 1;
-    this.layout =
-      zoom === 1
-        ? base
-        : {
-            x: base.x - (base.w * (zoom - 1)) / 2,
-            y: base.y - (base.h * (zoom - 1)) / 2,
-            w: base.w * zoom,
-            h: base.h * zoom,
-          };
-    if (this.video) this.video.style.transform = `scale(${zoom})`;
-    if (this.poster) this.poster.style.transform = `scale(${zoom})`;
-    // The glowing frame in the footage has a ~1.5 %-of-width corner radius; match it so the
-    // workbench looks like it is *inside* that frame instead of pasted on top.
-    this.radius = Math.round(this.layout.w * 0.0156);
-    this.workbench.resize(this.cw, this.ch);
-  }
-
-  async gate() {
-    const timeout = (this.store.get().settings.splash || {}).gateTimeoutMs || 1200;
-    const video = this.video;
-
-    const ready = new Promise((resolve) => {
-      if (video.readyState >= 3 && video.videoWidth) return resolve();
-      const done = () => {
-        video.removeEventListener('canplay', done);
-        video.removeEventListener('error', done);
-        resolve();
-      };
-      video.addEventListener('canplay', done, { once: true });
-      video.addEventListener('error', done, { once: true });
-    });
-
-    const posterReady = new Promise((resolve) => {
-      if (!this.poster.src) return resolve();
-      if (this.poster.complete && this.poster.naturalWidth) return resolve();
-      const done = () => resolve();
-      this.poster.addEventListener('load', done, { once: true });
-      this.poster.addEventListener('error', done, { once: true });
-    });
-
-    const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
-
-    await Promise.race([Promise.all([ready, posterReady, fonts, nextFrame()]), sleep(timeout)]);
-    this.measure();
-  }
-
-  bindFrameCallback() {
-    const video = this.video;
-    if (typeof video.requestVideoFrameCallback !== 'function') return;
-    const onFrame = (_now, metadata) => {
-      this.anchor = { mediaTime: metadata.mediaTime, expected: metadata.expectedDisplayTime };
-      this.vfcId = video.requestVideoFrameCallback(onFrame);
+function startFrameLoop() {
+  if (typeof video.requestVideoFrameCallback === 'function') {
+    const tick = () => {
+      if (video.readyState >= 2) window.bridge.frame(video.currentTime);
+      video.requestVideoFrameCallback(tick);
     };
-    this.vfcId = video.requestVideoFrameCallback(onFrame);
+    video.requestVideoFrameCallback(tick);
+    return;
+  }
+  // 老内核兜底：rAF 里读 currentTime
+  const tick = () => {
+    if (video.readyState >= 2) window.bridge.frame(video.currentTime);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
 
-    video.addEventListener('ended', () => this.toEnd(false), { once: true });
-    video.addEventListener('error', () => this.settle(), { once: true });
+async function start() {
+  const state = await window.bridge.bootstrap();
+  const media = state.media || {};
+  const splash = (state.settings && state.settings.splash) || {};
+
+  fit = media.fit === 'contain' ? 'contain' : 'cover';
+  zoom = Number(media.zoom) > 0 ? Number(media.zoom) : 1;
+
+  if (media.poster) poster.src = media.poster;
+
+  video.addEventListener('loadedmetadata', place);
+  video.addEventListener('playing', () => document.body.classList.add('video-live'));
+  video.addEventListener('error', () => {
+    setNote('视频无法播放，直接进入 Codex');
+    window.bridge.failed('video-error');
+  });
+
+  window.addEventListener('resize', place);
+  place();
+
+  window.bridge.onNote(setNote);
+  window.bridge.onHold(() => {
+    if (!video.paused) video.pause();
+    setNote('Codex 还在启动…');
+  });
+  window.bridge.onResume(() => {
+    setNote('');
+    if (video.paused) video.play().catch(() => {});
+  });
+  window.bridge.onRate((rate) => {
+    const value = Number(rate);
+    if (Number.isFinite(value) && value > 0) video.playbackRate = Math.min(2, Math.max(0.25, value));
+  });
+  window.bridge.onFade(() => document.body.classList.add('fade-out'));
+
+  const skipNow = () => window.bridge.skip();
+  skip.addEventListener('click', skipNow);
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') skipNow();
+  });
+  window.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  if (!media.video) {
+    setNote('没有找到开屏视频，直接进入 Codex');
+    window.bridge.failed('no-media');
+    // 仍然要报 layout，主进程靠它算入场时间
+    await window.bridge.ready();
+    return;
   }
 
-  estimateTime(now) {
-    const video = this.video;
-    const duration = Number.isFinite(video.duration) ? video.duration : this.theme.duration;
-    if (video.paused || !this.anchor) return Math.min(video.currentTime || 0, duration);
-    const estimate = this.anchor.mediaTime + (now - this.anchor.expected) / 1000;
-    return Math.max(0, Math.min(duration, estimate));
+  if (splash.enabled === false) {
+    window.bridge.failed('disabled');
+    await window.bridge.ready();
+    return;
   }
 
-  loop() {
-    const tick = (now) => {
-      if (!this.running || this.tailing) return;
-      this.raf = requestAnimationFrame(tick);
-      const time = this.estimateTime(now);
-      this.time = time;
-      this.updateGeometry(time);
+  video.src = media.video;
+  const volume = Math.max(0, Math.min(1, Number(splash.volume) || 0));
+  video.volume = volume;
+  video.muted = volume === 0;
 
-      if (!this.liveShown && time >= this.theme.transitionStart - 0.25) {
-        this.liveShown = true;
-        this.portal.classList.add('is-live');
-        this.stage.classList.add('is-transitioning');
-      }
-      if (time >= this.theme.transitionEnd) this.toEnd(false);
-    };
-    this.raf = requestAnimationFrame(tick);
-  }
+  startFrameLoop();
 
-  updateGeometry(time) {
-    if (!this.layout) this.measure();
-    const frame = framesAt(this.theme.screenFrames, time);
-    const raw = mapFrame(frame, this.layout);
-    const rect = clampRect(raw, this.cw, this.ch);
-    this.currentRect = rect;
-    this.applyRect(rect, this.radius || 14);
-    return rect;
-  }
-
-  applyRect(rect, radius) {
-    const portalRect = toPortal(rect, this.cw, this.ch);
-    const style = this.portal.style;
-    style.left = `${portalRect.x}px`;
-    style.top = `${portalRect.y}px`;
-    style.width = `${portalRect.w}px`;
-    style.height = `${portalRect.h}px`;
-    style.borderRadius = `${Math.max(0, Math.round(radius))}px`;
-
-    // The video's frame is ~2.1:1 while the window is ~1.6:1, so a uniform "cover" scale
-    // overflows vertically. Centre that overflow instead of anchoring at the top-left.
-    const offsetX = Math.round((portalRect.w - this.cw * portalRect.k) / 2);
-    const offsetY = Math.round((portalRect.h - this.ch * portalRect.k) / 2);
-    this.workbenchEl.style.left = `${offsetX}px`;
-    this.workbenchEl.style.top = `${offsetY}px`;
-    this.workbenchEl.style.transform = `scale(${portalRect.k})`;
-    this.workbenchEl.style.transformOrigin = '0 0';
-  }
-
-  /** Close the remaining gap: from the last keyframe rectangle to the full window. */
-  toEnd(short) {
-    if (this.tailing) return;
-    this.tailing = true;
-    this.liveShown = true;
-    this.portal.classList.add('is-live');
-    this.stage.classList.add('is-transitioning');
-
-    if (this.skipButton) this.skipButton.hidden = true;
-
-    // Recompute at transitionEnd so the tail starts exactly where the keyframes stop.
-    const rect = this.updateGeometry(this.theme.transitionEnd);
-    try {
-      this.video.pause();
-    } catch {
-      /* ignore */
-    }
-
-    const settings = this.store.get().settings;
-    const duration = short ? 320 : settings.splash.tailMs > 0 ? settings.splash.tailMs : tailMs(rect, this.cw, this.ch);
-    const from = { x: rect.x, y: rect.y, w: rect.w, h: rect.h };
-    const to = { x: 0, y: 0, w: this.cw, h: this.ch };
-    const start = performance.now();
-
-    const step = (now) => {
-      const p = Math.min(1, (now - start) / duration);
-      const eased = easeInOutCubic(p);
-      const current = lerpRect(from, to, eased);
-      this.applyRect(current, (this.radius || 14) * (1 - eased));
-      if (p < 1) requestAnimationFrame(step);
-      else this.settle();
-    };
-    requestAnimationFrame(step);
-  }
-
-  async settle() {
-    if (!this.running && this.stage.dataset.mode === 'workbench') return;
-    this.running = false;
-    this.tailing = false;
-    cancelAnimationFrame(this.raf);
-    await this.releaseVideo();
-
-    this.stage.dataset.mode = 'workbench';
-    this.portal.classList.add('is-settled');
-    this.portal.classList.remove('is-live');
-    this.stage.classList.remove('is-transitioning');
-    this.portal.removeAttribute('style');
-    this.resetWorkbenchTransform();
-
-    if (this.skipButton) this.skipButton.hidden = true;
-    this.bridge.splashDone();
-    this.onSettled();
-  }
-
-  async releaseVideo() {
-    const video = this.video;
-    if (!video) return;
-    if (typeof video.cancelVideoFrameCallback === 'function' && this.vfcId) {
-      try {
-        video.cancelVideoFrameCallback(this.vfcId);
-      } catch {
-        /* ignore */
-      }
-      this.vfcId = 0;
-    }
-    try {
-      video.pause();
-    } catch {
-      /* ignore */
-    }
-    video.classList.remove('is-visible');
-    this.showPoster();
-    await nextFrame();
-    video.style.display = 'none';
-    video.removeAttribute('src');
-    try {
-      video.load();
-    } catch {
-      /* ignore */
-    }
-    this.anchor = null;
-  }
-
-  /** Esc / skip button: jump to the end of the animation, keep the transition short. */
-  skip() {
-    if (!this.running) return;
-    this.toEnd(true);
-  }
-
-  /* -------------------------- calibration helpers -------------------------- */
-
-  /** Bring the video layer back without starting the automatic timeline. */
-  async enterCalibration(themeOverride) {
-    const state = this.store.get();
-    const media = state.media || {};
-    this.theme = themeOverride || state.theme;
-    this.running = false;
-    this.tailing = false;
-    this.liveShown = true;
-    cancelAnimationFrame(this.raf);
-    this.stage.dataset.mode = 'splash';
-    this.portal.classList.remove('is-settled');
-    this.splashEl.hidden = false;
-    this.splashEl.classList.toggle('fit-contain', this.theme.fit === 'contain');
-    this.poster.src = media.poster || '';
-
-    const video = this.video;
-    video.style.display = '';
-    video.classList.remove('is-visible');
-    if (video.getAttribute('src') !== media.video) {
-      video.src = media.video;
-      video.load();
-    }
-    await this.waitMetadata(2500);
-    this.measure();
-    video.pause();
-    this.showVideo();
-    this.hidePoster();
-  }
-
-  waitMetadata(timeout) {
-    const video = this.video;
-    if (video.readyState >= 1 && video.videoWidth) return Promise.resolve();
-    return new Promise((resolve) => {
-      const done = () => {
-        video.removeEventListener('loadedmetadata', done);
-        video.removeEventListener('error', done);
-        resolve();
-      };
-      video.addEventListener('loadedmetadata', done, { once: true });
-      video.addEventListener('error', done, { once: true });
-      setTimeout(done, timeout);
-    });
-  }
-
-  /** Pixel rect (window space) for an arbitrary time, using the current theme. */
-  rectAt(time) {
-    if (!this.layout) this.measure();
-    const frame = framesAt(this.theme.screenFrames, time);
-    return clampRect(mapFrame(frame, this.layout), this.cw, this.ch);
-  }
-
-  /** Jump straight to the workbench state, skipping the tail animation. */
-  settleNow() {
-    this.running = false;
-    this.tailing = false;
-    cancelAnimationFrame(this.raf);
-    this.stage.dataset.mode = 'workbench';
-    this.portal.classList.add('is-settled');
-    this.portal.classList.remove('is-live');
-    this.stage.classList.remove('is-transitioning');
-    this.portal.removeAttribute('style');
-    this.resetWorkbenchTransform();
-    this.releaseVideo();
-    this.bridge.splashDone();
-    this.onSettled();
-  }
-
-  resetWorkbenchTransform() {
-    this.workbenchEl.style.transform = 'none';
-    this.workbenchEl.style.left = '0px';
-    this.workbenchEl.style.top = '0px';
-  }
-
-  previewAt(time) {
-    if (!this.layout) this.measure();
-    if (!this.video.paused) {
-      this.video.pause();
-      this.running = false;
-      cancelAnimationFrame(this.raf);
-    }
-    const threshold = (this.theme.transitionStart || 0) - 0.25;
-    this.portal.classList.toggle('is-live', time >= threshold);
-    this.time = time;
-    return this.updateGeometry(time);
-  }
-
-  bindSkip() {
-    on(window, 'keydown', (event) => {
-      if (event.key === 'Escape' && this.running && !document.body.classList.contains('hud-active')) {
-        event.preventDefault();
-        this.skip();
-      }
-    });
-    on(this.skipButton, 'click', () => this.skip());
-  }
-
-  bindResize() {
-    on(window, 'resize', () => {
-      this.measure();
-      if (this.stage.dataset.mode === 'workbench') {
-        this.workbenchEl.style.transform = 'none';
-        return;
-      }
-      if (this.theme && this.running) this.updateGeometry(this.time);
-    });
+  try {
+    await window.bridge.ready();
+    await video.play();
+  } catch (error) {
+    setNote('自动播放被阻止，正在进入 Codex');
+    window.bridge.failed('play-failed');
   }
 }
 
-module.exports = { Splash };
+start().catch((error) => {
+  setNote(`开屏出错：${(error && error.message) || error}`);
+  window.bridge.failed(String((error && error.message) || error));
+});

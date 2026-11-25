@@ -1,43 +1,41 @@
 'use strict';
 
-const { toFinite, isValidAppId } = require('./validate');
+const { toFinite } = require('./validate');
 
+/**
+ * v2：本工具不再有自己的工作台，只负责「开屏动画 + 给 Codex 注入主题」。
+ * 因此去掉了 recentProjects / navCollapsed / settingsOpen 这类工作台状态。
+ */
 const DEFAULT_SETTINGS = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   skinId: 'cosmic',
   background: {
     mode: 'builtin', // builtin | file | none
     filePath: null,
     fit: 'cover', // cover | contain
-    opacity: 1, // 0..1  -> exposed in the UI as 0–100 %
-    blur: 0, // px, 0..40
-    scrim: 0.28, // 0..0.72
+    opacity: 1, // 背景图自身不透明度 0..1
+    panelAlpha: 0.82, // UI 面板不透明度 0.35..1（越低，背景越透出来）
+    blur: 0, // px 0..40
+    scrim: 0.28, // 0..0.72（内部再乘 0.72）
     vignette: 0.45, // 0..1
   },
   splash: {
     enabled: true,
     volume: 0.6,
     skippable: true,
-    gateTimeoutMs: 1200,
-    tailMs: 0, // 0 => auto
-    tailMode: 'auto', // auto | fixed
+    tailMs: 0, // 0 => 自动
+    slowRate: 0.6, // 入场后把视频放慢到该倍速，让「长成窗口」那一段看得清；1 = 不放慢
+  },
+  codex: {
+    launch: 'alias', // alias（执行别名，保包身份）| exe（直启安装目录里的 exe）
   },
   window: {
-    bounds: null,
-    maximized: false,
-  },
-  app: {
-    codexAppId: 'OpenAI.Codex_2p2nqsd0c76g0!App',
-    recentProjects: [],
+    endMode: 'fill', // fill（铺满工作区）| keep（保持 Codex 原尺寸）
   },
   ui: {
-    navCollapsed: false,
-    settingsOpen: true,
     onboardedAt: null,
   },
 };
-
-const MAX_PROJECTS = 8;
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -62,67 +60,63 @@ function ratio(value, fallback) {
   return n < 0 ? 0 : n > 1 ? 1 : n;
 }
 
-/** Defence in depth: settings.json is user-editable, never trust it. */
-function sanitizeSettings(raw) {
-  const merged = deepMerge(DEFAULT_SETTINGS, isPlainObject(raw) ? raw : {});
-  const bg = merged.background;
-
-  merged.skinId = typeof merged.skinId === 'string' && merged.skinId ? merged.skinId.slice(0, 40) : 'cosmic';
-  merged.background = {
-    mode: ['builtin', 'file', 'none'].includes(bg.mode) ? bg.mode : 'builtin',
-    filePath: typeof bg.filePath === 'string' ? bg.filePath : null,
-    fit: bg.fit === 'contain' ? 'contain' : 'cover',
-    opacity: ratio(bg.opacity, 1),
-    blur: Math.max(0, Math.min(40, toFinite(bg.blur, 0))),
-    scrim: ratio(bg.scrim, 0.28) * 0.72,
-    vignette: ratio(bg.vignette, 0.45),
-  };
-  if (merged.background.mode === 'file' && !merged.background.filePath) merged.background.mode = 'builtin';
-
-  const splash = merged.splash;
-  merged.splash = {
-    enabled: splash.enabled !== false,
-    volume: ratio(splash.volume, 0.6),
-    skippable: splash.skippable !== false,
-    gateTimeoutMs: Math.max(0, Math.min(5000, toFinite(splash.gateTimeoutMs, 1200))),
-    tailMs: Math.max(0, Math.min(3000, toFinite(splash.tailMs, 0))),
-    tailMode: splash.tailMode === 'fixed' ? 'fixed' : 'auto',
-  };
-
-  const bounds = merged.window && merged.window.bounds;
-  merged.window = {
-    maximized: !!(merged.window && merged.window.maximized),
-    bounds:
-      bounds &&
-      ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(toFinite(bounds[k], NaN)))
-        ? {
-            x: Math.round(toFinite(bounds.x, 0)),
-            y: Math.round(toFinite(bounds.y, 0)),
-            width: Math.max(960, Math.round(toFinite(bounds.width, 1440))),
-            height: Math.max(640, Math.round(toFinite(bounds.height, 900))),
-          }
-        : null,
-  };
-
-  const app = merged.app;
-  merged.app = {
-    codexAppId: isValidAppId(app.codexAppId) ? app.codexAppId : DEFAULT_SETTINGS.app.codexAppId,
-    recentProjects: Array.isArray(app.recentProjects)
-      ? app.recentProjects
-          .filter((p) => typeof p === 'string' && p.length > 0 && p.length < 400)
-          .slice(0, MAX_PROJECTS)
-      : [],
-  };
-
-  const ui = merged.ui;
-  merged.ui = {
-    navCollapsed: !!ui.navCollapsed,
-    settingsOpen: ui.settingsOpen !== false,
-    onboardedAt: typeof ui.onboardedAt === 'string' ? ui.onboardedAt : null,
-  };
-
-  merged.schemaVersion = 1;
-  return merged;
+function clamp(value, min, max, fallback) {
+  const n = toFinite(value, fallback);
+  return n < min ? min : n > max ? max : n;
 }
 
-module.exports = { DEFAULT_SETTINGS, MAX_PROJECTS, deepMerge, sanitizeSettings, isPlainObject };
+/**
+ * settings.json 是用户可编辑的，永远不要相信它。
+ * 这里重建一个只含已知字段的对象：v1 留下的工作台状态（recentProjects / bounds /
+ * codexAppId）会被自然丢弃，而不是一路带到新版本里。
+ */
+function sanitizeSettings(raw) {
+  const input = isPlainObject(raw) ? raw : {};
+  const merged = deepMerge(DEFAULT_SETTINGS, input);
+  // v1 的 scrim 是「算出来的极小值」，照搬到 v2 会得到一个几乎不遮罩的难看效果，
+  // 迁移时只把这一项拉回默认，其余用户选择（背景图、音量）保留。
+  if (Number(input.schemaVersion) === 1) {
+    merged.background = { ...(merged.background || {}), scrim: DEFAULT_SETTINGS.background.scrim };
+  }
+  const bg = isPlainObject(merged.background) ? merged.background : {};
+  const splash = isPlainObject(merged.splash) ? merged.splash : {};
+  const codex = isPlainObject(merged.codex) ? merged.codex : {};
+  const win = isPlainObject(merged.window) ? merged.window : {};
+  const ui = isPlainObject(merged.ui) ? merged.ui : {};
+
+  const background = {
+    mode: ['builtin', 'file', 'none'].includes(bg.mode) ? bg.mode : 'builtin',
+    filePath: typeof bg.filePath === 'string' && bg.filePath ? bg.filePath : null,
+    fit: bg.fit === 'contain' ? 'contain' : 'cover',
+    opacity: ratio(bg.opacity, 1),
+    panelAlpha: clamp(bg.panelAlpha, 0.35, 1, 0.82),
+    blur: clamp(bg.blur, 0, 40, 0),
+    scrim: ratio(bg.scrim, 0.28),
+    vignette: ratio(bg.vignette, 0.45),
+  };
+  if (background.mode === 'file' && !background.filePath) background.mode = 'builtin';
+
+  return {
+    schemaVersion: 2,
+    skinId: typeof merged.skinId === 'string' && merged.skinId ? merged.skinId.slice(0, 40) : 'cosmic',
+    background,
+    splash: {
+      enabled: splash.enabled !== false,
+      volume: ratio(splash.volume, 0.6),
+      skippable: splash.skippable !== false,
+      tailMs: clamp(splash.tailMs, 0, 3000, 0),
+      slowRate: clamp(splash.slowRate, 0.25, 1, 0.6),
+    },
+    codex: {
+      launch: codex.launch === 'exe' ? 'exe' : 'alias',
+    },
+    window: {
+      endMode: win.endMode === 'keep' ? 'keep' : 'fill',
+    },
+    ui: {
+      onboardedAt: typeof ui.onboardedAt === 'string' ? ui.onboardedAt : null,
+    },
+  };
+}
+
+module.exports = { DEFAULT_SETTINGS, deepMerge, sanitizeSettings, isPlainObject };

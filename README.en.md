@@ -1,156 +1,207 @@
 <div align="center">
 
-<img src="docs/shot-workbench.png" alt="Codex Open Boot workbench" width="880" />
+<img src="docs/shot-splash.png" alt="Codex Open Boot splash screen" width="880" />
 
 # Codex Open Boot
 
-**A 10-second splash animation that lands in a themeable workbench, then hands you back to Codex.**
+**A splash animation for the real Codex desktop client — plus a theme injected into its UI.**
 
 [![Release](https://img.shields.io/github/v/release/cl1973-hello/codex-open-boot?style=flat-square)](https://github.com/cl1973-hello/codex-open-boot/releases)
 [![License](https://img.shields.io/github/license/cl1973-hello/codex-open-boot?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7ea4?style=flat-square)](#requirements)
+[![Electron](https://img.shields.io/badge/Electron-45-47848f?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 
-[中文](README.md) · [Download](https://github.com/cl1973-hello/codex-open-boot/releases/latest) · [FAQ](#faq)
+[中文](README.md) · [Download](https://github.com/cl1973-hello/codex-open-boot/releases/latest) · [Hard limits](#four-hard-limits) · [Troubleshooting](#troubleshooting)
 
 </div>
 
-![From splash to workbench](docs/demo.gif)
+---
+
+## This is not a launcher
+
+1.0 was "my own window, my own workbench" — you watched a splash, then worked inside a Codex-looking UI that was not Codex.
+
+2.0 throws that away. **When the splash ends, what you get is the real Codex window**, and the theme is injected into the real Codex UI. You never see a second app, because there is no second UI.
+
+| What you see | What actually happens |
+| --- | --- |
+| You double-click "Codex" on the desktop | A `.lnk` that points at *this* program, not the official entry |
+| A 10-second starfield splash | A full-screen frameless window playing `video.mp4` |
+| The screen inside the footage "grows" | Every frame issues `SetWindowPos` on the **real** Codex window, following that rectangle |
+| The splash fades and the UI is already there | The splash window drops `setOpacity` to 0, then destroys itself; Codex is already laid out underneath |
+| The UI turns deep teal | 31 semantic tokens injected as CSS variables over CDP |
+
+Codex is already rendering when the entrance happens — it grows *underneath* the splash window, so the handoff has no black flash, no white flash and no reload.
 
 ---
 
-## Quick start (3 steps)
+## Four hard limits
 
-1. Open the [latest release](https://github.com/cl1973-hello/codex-open-boot/releases/latest).
-2. Download **`CodexOpenBoot-x.y.z-win-x64-portable.exe`** (single file, no installer).
-3. Double-click it. Ten seconds later you are in the workbench.
+These are not "not implemented yet". They are ceilings imposed by the approach itself. Stated up front so you do not waste an evening on them.
 
-> **No Node.js, no terminal, no administrator rights.**
-> Windows SmartScreen may warn about an unknown publisher — that is normal for unsigned
-> binaries. Click **More info → Run anyway**. Prefer a start-menu entry? Grab the
-> `...-setup.exe` instead.
+**1. Windows + Microsoft Store Codex only.**
+The install path comes from `Get-AppxPackage OpenAI.Codex` and the launch goes through the execution alias. Portable builds and other platforms will not work.
 
----
+**2. It restarts a Codex that is already running.**
+Injecting a theme requires `--remote-debugging-port` at launch, and Codex holds a single-instance lock — the second launch's arguments are simply dropped. So this tool makes the running Codex exit, then relaunches it with the flag.
+A Codex that was *already* started by this tool (debug port present) is adopted as-is, no restart.
 
-## What it does
+**3. The entrance cannot be earlier than ~9.2 s into the video.**
+Codex has a `WM_GETMINMAXINFO` floor of 793×991 **physical pixels**. That cannot be lowered. The rectangle in your footage has to be large enough to hold that window, which at 165% scaling happens at 9.22 s. The number is recomputed on every run (`findEntryTime`) rather than hard-coded, but your video cannot be shorter than it.
 
-The splash video, the transition and the workbench all live in **one window, one document**.
-Inside the footage there is a rectangular screen; the workbench is mounted at its final size,
-uniformly scaled into that rectangle, and scaled back up as the rectangle grows. The last
-620 ms close the remaining gap to the full window — no page navigation, no second window,
-therefore no black or white flash.
-
-It is **not** a Codex replacement. It never patches, injects into or repackages the official
-client. "Launch Codex" simply asks Windows to activate the installed app identity.
+**4. Reskin only, no layout changes.**
+What gets injected is colours, a background image and transparency — no moved buttons, no resized type, no rearranged panels. Want a different layout? Patch Codex itself.
 
 ---
 
-## Features
+## 30-second setup
 
-- Splash video with `Esc` / skip, and a keyframe-driven transition into the workbench.
-- Three skins (Cosmic / Graphite / Daylight) with a 220 ms colour transition.
-- Background: built-in still, your own image, or none — with **opacity 0–100 %**, blur,
-  scrim and vignette.
-- Readability guard: if the picture makes text unreadable, the scrim deepens automatically
-  and tells you why (WCAG AA 4.5:1).
-- Calibration panel (`Ctrl+Shift+C`) to re-align the keyframes for **your own** video.
-- Launch the real Codex client with a configurable AppID, with a human-readable error path.
-- Everything persists in `%APPDATA%\CodexOpenBoot`: skin, background, opacity, volume,
-  window bounds.
+1. Open [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest) and download `CodexOpenBoot-2.0.0-win-x64-portable.exe`.
+2. Run it. On first launch it asks whether to take over the "Codex" entry — say yes.
+3. From then on, double-clicking **Codex** on the desktop means "splash → themed Codex".
 
-## Theming and backgrounds
+> The binary is not code-signed, so Windows will show "Windows protected your PC". Click **More info → Run anyway**.
+> It needs no administrator rights and never writes into the Codex install directory.
 
-Right-hand panel → **Background**: drag an image onto the dashed area (PNG/JPG/WEBP/BMP,
-≤ 20 MB) or pick a file; then drag **opacity** to taste. The image is copied into your user
-data folder, so moving or deleting the original does not break it.
+<img src="docs/shot-panel.png" alt="Settings panel" width="720" />
 
-Right-hand panel → **Theme**: pick a skin. Reset everything with **Reset all settings** at
-the bottom of the panel.
-
-## Use your own splash video
-
-1. Provide an **MP4 with H.264 + AAC** (16:9, 8–15 s recommended).
-2. Replace `assets/media/video.mp4` with it.
-3. Open the workbench → **Tools → Calibrate animation** (`Ctrl+Shift+C`), drag the rectangle
-   onto the screen in your footage, drag the `start` / `end` markers on the timeline, press
-   **Preview tail**, then **Save**.
-
-Calibration is written to `%APPDATA%\CodexOpenBoot\theme.json`, never to the repository.
+Tray → **Settings** opens the panel above: three skins, background image (opacity / blur / scrim / vignette), splash volume, post-entrance slow-motion, and what the window does at the end. Changes are pushed to a running Codex immediately — no restart.
 
 ---
 
-## FAQ
-
-**SmartScreen / antivirus warning?** Expected for unsigned software. The whole source is
-here and every installer is built by GitHub Actions (`release.yml`); each release ships
-`SHA256SUMS.txt`. You can always build it yourself.
-
-**Black splash or no audio?** Unsupported codec (use H.264 + AAC), or a Windows "N" edition
-missing media features. You can also just disable the animation in settings.
-
-**"Launch Codex" does nothing?** Install the Codex desktop client first. If it is installed,
-the AppID probably changed — run `Get-StartApps | findstr /i codex` in PowerShell and paste
-the whole `AppID` value into Settings → Client → Codex AppID.
-
-**How do I uninstall?** Uninstall from Windows Settings (installer) or delete the exe
-(portable). Settings and backgrounds live in `%APPDATA%\CodexOpenBoot`.
-
-**Does it auto-start or upload anything?** No. No autostart entry, no background service, no
-network access unless you click a link.
-
----
-
-## Something else broken?
-
-Open an [issue](https://github.com/cl1973-hello/codex-open-boot/issues/new?template=bug_report.md)
-and attach the log file the template asks for:
+## How it works
 
 ```
-%APPDATA%\CodexOpenBoot\launcher.log
+Double-click Codex.lnk
+   │
+   ├─ Full-screen splash appears instantly (poster underneath, so the video join does not flash)
+   │
+   ├─ Background: quit the old Codex → relaunch it with 5 debug flags → wait for DevToolsActivePort
+   │
+   ├─ Connect CDP to app://-/index.html, inject <style id="cob-theme">
+   │    · 31 --app-color-* / --codex-theme-* semantic tokens
+   │    · force <html data-theme> to the skin's side (otherwise panels stay light)
+   │    · re-inject on navigation / reload via events + retries
+   │
+   ├─ Play to 9.2 s; the real window is resized per frame, growing with that "screen"
+   │    video time comes from requestVideoFrameCallback, not the wall clock
+   │
+   ├─ Final 400–1100 ms tween fills the work area, HWND_NOTOPMOST
+   │
+   └─ Splash fades out in 240 ms → destroyed → focus handed to Codex → app stays in the tray
 ```
 
-Tools → Open log inside the workbench jumps straight there.
+Facts that came out of the M0 spikes (full log in [`.m0/M0-REPORT.md`](.m0/M0-REPORT.md)):
+
+- `Page.addScriptToEvaluateOnNewDocument` **does not run after a reload** on `app://` pages; you need `frameNavigated` / `loadEventFired` plus retries.
+- Codex resets `data-*` on `<html>`, so the marker lives on `<style id="cob-theme">` and a `window` property, with a `MutationObserver` to reassert it.
+- Codex's CSP has no `file:` in `img-src`, so background images must be data URLs.
+- The page shell paints a hard-coded `linear-gradient(#181818 50%)` that is not a semantic token, so it needs its own override.
+- Electron sizes windows in DIP while Chromium paints with a rounded `devicePixelRatio` — roughly 1% apart. Window placement therefore uses "the physical viewport the renderer believes in".
 
 ---
 
 ## Requirements
 
-Windows 10 1809+ / Windows 11, x64. ~250 MB of disk. No dedicated GPU needed.
+| | |
+| --- | --- |
+| OS | Windows 10 1809+ / Windows 11 |
+| Codex | Microsoft Store build (MSIX, package name `OpenAI.Codex`) |
+| Privileges | Standard user is enough |
+| Dependencies | None. No Node, no drivers |
 
-## Notes
+---
 
-- Personal project, **not affiliated with OpenAI**. No official Codex assets are bundled.
-- The video and stills in `assets/media/` are **not** MIT licensed — see
-  [MEDIA_NOTICE.md](MEDIA_NOTICE.md) before redistributing.
-- Windows x64 only. Other platforms are untested.
+## Use your own splash video
 
-## Project structure
+`assets/media/theme.json` describes the video and the "screen track":
 
+```json
+{
+  "duration": 10.027,
+  "video": "video.mp4",
+  "poster": "poster.png",
+  "transitionStart": 6.8,
+  "transitionEnd": 9.9,
+  "fit": "cover",
+  "zoom": 1.33,
+  "screenFrames": [
+    { "time": 6.8, "x": 0.3141, "y": 0.3486, "width": 0.3711, "height": 0.3028 }
+  ]
+}
 ```
-src/main/       Electron main: window, settings, theme loading, IPC, launching Codex
-src/preload/    The only bridge, exposes named methods
-src/shared/     Pure functions: keyframe geometry, validation, WCAG contrast (unit tested)
-src/renderer/   UI without a framework: splash/, workbench/, calibration/, styles/
-assets/media/   Splash video, stills, theme.json, skins.json
-test/           20 unit tests (node --test)
-scripts/        Bundling, dev loop, icon and demo-gif generation
-.github/        CI + tag-driven release workflow
-```
+
+- `screenFrames` are **normalised** rectangles (0..1 relative to the video frame), one every 100 ms, linearly interpolated.
+- `zoom` crops the video's own letterboxing (>1 zooms in, edges get cut).
+- Dropping `theme.json` and a video into `%APPDATA%\CodexOpenBoot\` overrides the bundled media without repacking.
+
+---
+
+## Troubleshooting
+
+The log is at `%APPDATA%\CodexOpenBoot\launcher.log` (tray → Open log).
+
+| Symptom | Cause / fix |
+| --- | --- |
+| Double-clicking Codex does nothing | Check the app is in the tray; check the shortcut target points at this program |
+| The UI is still light | Codex was not started by this tool. Tray → Replay splash |
+| Sidebar / input colours unchanged | A Codex update changed the tokens. Run `npm run probe` and read the injection result |
+| Window is tiny after the splash | The previous run was killed mid-animation. Restored automatically next launch, or tray → Restore Codex window |
+| Blocked by security software | Whitelist it, or use the `--setup.exe` installer |
+
+**`npm run probe`** runs one complete splash and prints something you can check: entrance time, entrance rect, tail duration, number of injected pages, and the delta between the video rectangle as computed by the renderer and by the main process (acceptance requires ≤2 px; measured 0.0 px). Written to `.probe/report.json`.
+
+To debug the renderer: `COB_DEBUG_PORT=9333 npm start`, then open `http://127.0.0.1:9333` in Chrome to inspect the splash page.
+
+---
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # rebuild + restart on change
-npm test
-npm run dist     # portable + installer into release/
+npm start            # build renderer + launch (this restarts Codex once)
+npm run dev          # rebuild renderer / restart main on change
+npm test             # pure-function tests: geometry, rects, token generation, settings clamping
+npm run probe        # end-to-end measurement
+npm run pack         # unpacked directory
+npm run dist         # portable + nsis installer
 ```
 
-Geometry in one line: `screenFrames` are normalised rectangles over the video frame; the
-renderer computes the `object-fit` display rect, interpolates the keyframes, converts to
-pixels and derives an integer portal rect plus a uniform scale factor. The workbench is laid
-out at final size and scaled, so text never reflows.
+Layout:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+```
+src/main/         Main process
+  boot.js         Splash state machine (idle → running → done/failed)
+  animate.js      Resize the real window per video frame
+  win32.js        koffi bindings to user32/dwmapi (read window info + SetWindowPos)
+  cdp.js          CDP client + theme injector
+  launch.js       Launch Codex, find the debug port, quit stale instances
+  theme.js        Settings + skins + background → CSS for injection
+  entry.js        The Codex.lnk on desktop / start menu
+  tray.js         Tray menu
+src/shared/       Pure functions (unit tested, shared by main and renderer)
+  portal.js       Normalised rect → pixel rect, entrance time
+  theme-css.js    Builds the stylesheet injected into Codex
+  geometry.js     Geometry primitives
+src/renderer/     Splash page + settings panel
+test/             node:test
+.m0/              M0 spike scripts and findings
+```
+
+### What it deliberately does not do
+
+- Never patches, repacks or replaces any Codex file (`app.asar` is untouched, byte for byte).
+- Never touches hashed class names — only CSS variables. Worst case after a Codex update is "colours stopped applying", not a blank window.
+- No network. Apart from CDP on `127.0.0.1` there are no outbound requests.
+- No telemetry.
+
+---
+
+## Notes
+
+- Personal project, **not affiliated with OpenAI**. No official Codex assets are bundled.
+- The video and stills in `assets/media/` are **not** MIT licensed — see [MEDIA_NOTICE.md](MEDIA_NOTICE.md) before redistributing.
+- Windows x64 only. Other platforms are untested.
 
 ## Credits & license
 

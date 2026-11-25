@@ -31,7 +31,7 @@ function normaliseFrame(raw) {
 
 /**
  * Normalise a theme object coming from disk. Never throws: bad values fall back to
- * something renderable so the launcher can always reach the workbench.
+ * something renderable so the splash can always hand off to Codex.
  */
 function normalizeTheme(raw, durationSeconds) {
   const theme = raw && typeof raw === 'object' ? raw : {};

@@ -9,10 +9,13 @@ import { context } from 'esbuild';
 
 const ELECTRON = path.join('node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron');
 
+const ENTRY = 'src/renderer/js/splash/splash.js';
+const OUTFILE = 'src/renderer/splash.bundle.js';
+
 const buildOptions = {
-  entryPoints: ['src/renderer/js/app.js'],
+  entryPoints: [ENTRY],
   bundle: true,
-  outfile: 'src/renderer/app.bundle.js',
+  outfile: OUTFILE,
   platform: 'browser',
   format: 'iife',
   target: ['chrome122'],
@@ -55,7 +58,7 @@ launch();
 let debounce = null;
 fs.watch('src/renderer', { recursive: true }, (_event, filename) => {
   if (!filename) return;
-  if (filename.includes('app.bundle.js')) return;
+  if (filename.includes('splash.bundle.js') || filename.includes('panel.bundle.js')) return;
   if (filename.endsWith('.map')) return;
   if (debounce) clearTimeout(debounce);
   debounce = setTimeout(async () => {

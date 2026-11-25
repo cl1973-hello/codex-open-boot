@@ -6,25 +6,33 @@ directories:
   output: release
   buildResources: build
 
-# Everything the app needs at runtime. There are no production dependencies, so the
-# package stays small; the video is shipped through extraResources (outside the asar)
-# so <video> can seek it normally.
+# 运行期需要的东西：主进程、预加载、共享纯函数、两个渲染入口、koffi 的 .node。
+# 视频走 extraResources（在 asar 外面），<video> 才能正常 seek。
 files:
   - package.json
   - src/main/**/*
   - src/preload/**/*
   - src/shared/**/*
   - src/renderer/index.html
-  - src/renderer/app.bundle.js
+  - src/renderer/panel.html
+  - src/renderer/splash.bundle.js
+  - src/renderer/panel.bundle.js
   - src/renderer/styles/**/*
   - '!**/*.map'
-  - '!**/node_modules/**'
+
+# koffi 是 NAPI 预编译包，.node 不能待在 asar 里
+asarUnpack:
+  - '**/node_modules/koffi/**'
 
 extraResources:
   - from: assets/media
     to: media
     filter:
       - '**/*'
+  - from: build/icon.png
+    to: icon.png
+  - from: build/icon.ico
+    to: codex.ico
 
 win:
   icon: build/icon.ico
@@ -46,7 +54,9 @@ nsis:
   perMachine: false
   allowElevation: false
   allowToChangeInstallationDirectory: false
-  createDesktopShortcut: true
+  # 桌面/开始菜单的「Codex」入口由程序自己创建（见 src/main/entry.js），
+  # 因为图标要从 Codex 包里提取，安装器不做这件事
+  createDesktopShortcut: false
   createStartMenuShortcut: true
   shortcutName: Codex Open Boot
   deleteAppDataOnUninstall: false
