@@ -203,7 +203,7 @@ codex-open-boot/
 ├─ test/               20 个单元测试（node --test）
 ├─ scripts/            打包渲染层、开发热重启、生成图标与演示动图
 ├─ build/              图标等构建资源
-└─ .github/workflows/  打 tag 自动出安装包 + 校验和
+└─ .github/            打 tag 自动出安装包 + 校验和；Issue 模板
 ```
 
 ---

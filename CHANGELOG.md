@@ -21,5 +21,5 @@
 
 - Electron 45 + 原生 DOM，无前端框架；渲染层用 esbuild 打包为单文件。
 - 主进程 `contextIsolation` + `sandbox`，preload 仅暴露具名方法。
-- 26 个单元测试覆盖几何插值、配置校验、对比度算法。
+- 20 个单元测试覆盖几何插值、配置校验、对比度算法。
 - GitHub Actions：打 tag 自动产出便携版与安装版，并生成 `SHA256SUMS.txt`。
