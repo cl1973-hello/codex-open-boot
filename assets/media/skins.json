@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "defaultSkin": "cosmic",
+  "skins": {
+    "cosmic": {
+      "name": "星河",
+      "description": "深空墨绿 · 冷白星光 · 暖金点缀",
+      "ornament": true,
+      "colors": {
+        "background": "#070F12",
+        "sidebar": "#050B0E",
+        "surface": "#0D1A1E",
+        "surfaceRaised": "#13242A",
+        "border": "#2B4247",
+        "text": "#E4EEEB",
+        "muted": "#9DB5B6",
+        "accent": "#C8ECEB",
+        "accentText": "#102323",
+        "secondary": "#CFB98D",
+        "glow": "#284B4D"
+      }
+    },
+    "graphite": {
+      "name": "石墨",
+      "description": "中性深灰 · 柔和白色 · 专注阅读",
+      "ornament": false,
+      "colors": {
+        "background": "#191919",
+        "sidebar": "#121212",
+        "surface": "#222222",
+        "surfaceRaised": "#2C2C2C",
+        "border": "#424242",
+        "text": "#EEEEEC",
+        "muted": "#ADADAA",
+        "accent": "#D9DAD7",
+        "accentText": "#202120",
+        "secondary": "#B9BDB5",
+        "glow": "#30332E"
+      }
+    },
+    "daylight": {
+      "name": "晨光",
+      "description": "浅色纸感 · 松绿强调 · 温暖留白",
+      "ornament": false,
+      "colors": {
+        "background": "#F4F5F1",
+        "sidebar": "#E8EBE7",
+        "surface": "#FFFFFF",
+        "surfaceRaised": "#E0E8E1",
+        "border": "#B9C8BF",
+        "text": "#182923",
+        "muted": "#4E635A",
+        "accent": "#27665B",
+        "accentText": "#FFFFFF",
+        "secondary": "#775C2E",
+        "glow": "#DCE8E0"
+      }
+    }
+  }
+}

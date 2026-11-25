@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build renderer bundle
+        run: npm run build:renderer
+
+      - name: Verify packaging (unpacked, no installer)
+        run: npx electron-builder --win --dir
+
+      - name: Check that media shipped next to the app
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'release/win-unpacked/resources/media/video.mp4')) {
+            throw 'resources/media/video.mp4 missing from the packaged app'
+          }
+          Get-ChildItem release/win-unpacked/resources/media | Select-Object Name, Length

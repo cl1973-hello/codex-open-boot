@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' file: data: blob:; media-src 'self' file: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self' file:"
+    />
+    <title>Codex Open Boot</title>
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/stage.css" />
+    <link rel="stylesheet" href="styles/workbench.css" />
+    <link rel="stylesheet" href="styles/calibration.css" />
+  </head>
+  <body>
+    <div id="stage" data-mode="booting">
+      <div id="splash" aria-hidden="true">
+        <img id="splash-poster" alt="" />
+        <video id="splash-video" playsinline preload="auto"></video>
+        <div class="splash-veil"></div>
+        <button id="splash-skip" class="splash-skip" type="button">跳过 <kbd>Esc</kbd></button>
+      </div>
+
+      <div id="portal" aria-hidden="true">
+        <div id="workbench"></div>
+      </div>
+
+      <div id="hud" hidden></div>
+      <div id="boot-fallback" hidden>
+        <div class="boot-fallback-inner">
+          <p>启动失败</p>
+          <button type="button" id="boot-fallback-retry">进入工作台</button>
+        </div>
+      </div>
+    </div>
+    <script src="app.bundle.js"></script>
+  </body>
+</html>

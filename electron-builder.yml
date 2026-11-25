@@ -1,0 +1,58 @@
+appId: com.github.cl1973hello.codexopenboot
+productName: Codex Open Boot
+copyright: Copyright © 2026 cl1973-hello
+
+directories:
+  output: release
+  buildResources: build
+
+# Everything the app needs at runtime. There are no production dependencies, so the
+# package stays small; the video is shipped through extraResources (outside the asar)
+# so <video> can seek it normally.
+files:
+  - package.json
+  - src/main/**/*
+  - src/preload/**/*
+  - src/shared/**/*
+  - src/renderer/index.html
+  - src/renderer/app.bundle.js
+  - src/renderer/styles/**/*
+  - '!**/*.map'
+  - '!**/node_modules/**'
+
+extraResources:
+  - from: assets/media
+    to: media
+    filter:
+      - '**/*'
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+
+portable:
+  artifactName: CodexOpenBoot-${version}-win-${arch}-portable.${ext}
+  requestExecutionLevel: user
+
+nsis:
+  artifactName: CodexOpenBoot-${version}-win-${arch}-setup.${ext}
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Codex Open Boot
+  deleteAppDataOnUninstall: false
+
+publish:
+  provider: github
+  owner: cl1973-hello
+  repo: codex-open-boot
+  releaseType: draft
