@@ -57,4 +57,5 @@ git push --follow-tags
 ```
 
 打上 `v*` tag 后，GitHub Actions 会在 windows-latest 上构建便携版与安装版，并把
-`SHA256SUMS.txt` 附到 Release 上。
+`SHA256SUMS.txt` 附到 Release 上。`electron-builder.yml` 里 `publish.releaseType` 目前是
+`release`（打 tag 即对公众可见）；想先自己验一遍再发，把它改成 `draft` 即可。

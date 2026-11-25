@@ -55,4 +55,6 @@ publish:
   provider: github
   owner: cl1973-hello
   repo: codex-open-boot
-  releaseType: draft
+  # Tag push publishes immediately so the README's "latest release" link works for
+  # end users. Switch to `draft` if you want to eyeball the build before it goes public.
+  releaseType: release
