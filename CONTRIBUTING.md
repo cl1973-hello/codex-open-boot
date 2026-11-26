@@ -81,3 +81,27 @@ git push --follow-tags
 
 `electron-builder.yml` 里 `publish.releaseType` 目前是 `release`（打 tag 即对公众可见）；
 想先自己验一遍再发，把它改成 `draft` 即可。
+
+### 仓库还没有远端时
+
+本地仓库是不带 `origin` 的，第一次要先建远端并推 `main`：
+
+```bash
+# 1. GitHub 网页建一个空仓库（不要勾 README / .gitignore / LICENSE），
+#    名字必须是 codex-open-boot，owner 必须与 electron-builder.yml 里的
+#    publish.owner 一致，否则 releases 上传会 404。
+
+# 2. 关联并推送
+git remote add origin https://github.com/<owner>/codex-open-boot.git
+git push -u origin main
+
+# 3. 确认 CI 绿了再打 tag —— tag 一旦推上去，Release 就直接对公众可见
+git tag -a v2.0.0 -m "Codex Open Boot 2.0.0"
+git push origin v2.0.0
+```
+
+首次 `git push` 会弹 Git Credential Manager 的浏览器授权。授权后本机记住凭据，
+后续不用再登。
+
+**顺序很重要**：先推 `main` 看 CI 是否通过，再推 tag。反过来做的话，tag 触发的
+Release 会立刻公开，而 CI 可能还在报错。

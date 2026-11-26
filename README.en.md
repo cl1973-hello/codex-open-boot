@@ -109,7 +109,7 @@ Facts that came out of the M0 spikes (full log in [`.m0/M0-REPORT.md`](.m0/M0-RE
 | Codex | Microsoft Store build (MSIX, package name `OpenAI.Codex`) |
 | Privileges | Standard user is enough |
 | Dependencies | None. No Node, no drivers |
-| Display | Verified on a single 2560×1368 @165%; multi-monitor / mixed DPI untested |
+| Display | Verified on a single 2560×1440 @165%; multi-monitor / mixed DPI untested |
 
 ---
 
