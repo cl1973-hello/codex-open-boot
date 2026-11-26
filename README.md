@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7ea4?style=flat-square)](#系统要求)
 [![Electron](https://img.shields.io/badge/Electron-45-47848f?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 
-[English](README.en.md) · [下载](https://github.com/cl1973-hello/codex-open-boot/releases/latest) · [硬限制](#四条硬限制) · [排查](#出问题了)
+[English](README.en.md) · [下载](https://github.com/cl1973-hello/codex-open-boot/releases/latest) · [硬限制](#五条硬限制) · [排查](#出问题了)
 
 </div>
 
@@ -21,7 +21,7 @@
 
 | 你看到的 | 实际的实现 |
 | --- | --- |
-| 双击桌面的「Codex」 | 一个 `.lnk` 指向本程序，不是官方入口 |
+| 点开始菜单里的 **Codex**（官方那个） | 托盘里常驻的进程轮询发现 `ChatGPT.exe` 新起来，立刻抢屏 |
 | 10 秒星空开屏 | 一个铺满屏幕的无边框窗口在放 `video.mp4` |
 | 视频里那块屏幕「长大」 | 每一帧都按视频里那块矩形 `SetWindowPos` 真实的 Codex 窗口 |
 | 开屏淡出，界面就在了 | 开屏窗 `setOpacity` 降到 0 后销毁，Codex 已经在下面铺好 |
@@ -31,21 +31,24 @@ Codex 窗口在入场时刻就已经在渲染了 —— 它在开屏窗**下面*
 
 ---
 
-## 四条硬限制
+## 五条硬限制
 
 这些不是「暂未实现」，是当前实现方式决定的上限。写在最前面，省得你踩坑。
 
 **1. 只支持 Windows + 微软商店版 Codex。**
 靠 `Get-AppxPackage OpenAI.Codex` 找安装路径、靠执行别名启动。绿色版 / 其他平台的 Codex 用不了。
 
-**2. 会重启已经开着的 Codex。**
-注入主题需要在启动时加 `--remote-debugging-port`，而 Codex 有单实例锁 —— 第二次启动的参数会被丢掉。所以本工具会先让正在运行的 Codex 退出，再带参数启动。
-已经由本工具启动过的 Codex（带调试端口）会直接接管，不会重启。
+**2. 接管时要重启一次 Codex。**
+注入主题需要在启动时加 `--remote-debugging-port`，而 Codex 有单实例锁 —— 第二个实例的参数会被丢掉。所以你点开官方图标后，本工具会先结束那个刚起来的实例，再带参数重新启动。
+已经由本工具启动过的 Codex（带调试端口）会直接接管，不会重启。Codex 本来就在跑的时候点图标，只会聚焦窗口，不重播开屏。
 
-**3. 入场不能早于视频第 ~9.2 秒。**
+**3. 需要本程序常驻托盘。**
+侦测靠托盘里那个 400ms 的轮询。从托盘「退出」之后，点官方图标得到的就是原生 Codex —— 没有开屏也没有主题。这是唯一必须记住的一条。
+
+**4. 入场不能早于视频第 ~9.2 秒。**
 Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺寸，改不掉。视频里那块矩形必须长到足够大才放得下窗口，165% 缩放下这个时刻是 9.22s。程序每次启动都会重算（`findEntryTime`），不和分辨率绑死；但视频总长度不能短于这个数字。
 
-**4. 只换皮，不改布局。**
+**5. 只换皮，不改布局。**
 注入的是配色、背景图、透明度 —— 不移动按钮、不改字号、不重排面板。想改布局请去改 Codex 自己。
 
 ---
@@ -53,8 +56,8 @@ Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺�
 ## 30 秒上手
 
 1. 打开 [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest)，下载名字以 `-portable.exe` 结尾的那个。
-2. 运行它。第一次会问你要不要接管「Codex」入口 —— 选创建。
-3. 之后双击桌面的 **Codex** 就是「开屏动画 → 主题化 Codex」。
+2. 运行它。第一次会先播一遍开屏，然后程序缩进托盘 —— **别退出托盘**，它要留着盯官方入口。
+3. 之后就像平常一样点开始菜单 / 搜索里的 **Codex**，开屏会自动抢过来。
 
 > 程序没有代码签名，Windows 会提示「已保护你的电脑」，点 **更多信息 → 仍要运行**。
 > 它不需要管理员权限，也不会写入 Codex 的安装目录。
@@ -68,11 +71,14 @@ Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺�
 ## 它怎么做到的
 
 ```
-双击 Codex.lnk
+点开始菜单里的 Codex（官方磁贴）
+   │
+   ├─ 托盘里 400ms 一轮的进程枚举发现 ChatGPT.exe 从「没有」变成「有」（实测 3ms 内响应）
    │
    ├─ 全屏开屏窗口立刻显示（静帧垫底，视频接上不闪）
    │
-   ├─ 后台：让旧 Codex 退出 → 带 5 个调试参数启动 → 等 DevToolsActivePort
+   ├─ 后台：结束这个刚起来的实例 → 带 5 个调试参数重新启动 → 等 DevToolsActivePort
+   │    （刚起来的那个没有调试端口，注入不了主题，所以必须换）
    │
    ├─ CDP 连上 app://-/index.html，注入 <style id="cob-theme">
    │    · 31 个 --app-color-* / --codex-theme-* 语义 token
@@ -86,6 +92,11 @@ Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺�
    │
    └─ 开屏窗 240ms 淡出 → 销毁 → 焦点交给 Codex → 驻留托盘
 ```
+
+> 为什么不能直接改快捷方式：官方 Codex 是 MSIX **执行别名**
+> （`%LOCALAPPDATA%\Microsoft\WindowsApps\chatgpt-desktop.exe`），没有 `.lnk` 可改，
+> 也不能给它附加启动参数。所以只能「看见它起来 → 抢屏 → 换自己的参数重拉」。
+> 判据只看「从零到有」：Codex 运行中自己派生新进程不算点击，否则会把用户正在用的窗口杀掉重开。
 
 几个 M0 阶段踩出来的事实（完整记录见 [`.m0/M0-REPORT.md`](.m0/M0-REPORT.md)）：
 
@@ -140,7 +151,9 @@ Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺�
 
 | 现象 | 原因 / 处理 |
 | --- | --- |
-| 双击 Codex 没反应 | 检查托盘里程序是否在跑；桌面快捷方式目标是否指向本程序 |
+| 点 Codex 没有开屏 | 托盘里程序没在跑（从托盘退出了）。重新运行一次本程序，它会缩回托盘 |
+| 点 Codex 之后闪了一下才出开屏 | 正常：接管要结束刚起来的官方实例再重拉，约 1.5 秒，开屏一般已经盖在上面 |
+| 用着用着 Codex 自己重启了 | 不该发生。把日志发出来 —— 侦测只认「从零到有」，运行中长出子进程不会接管 |
 | 界面还是浅色 | Codex 不是本工具启动的。托盘 → 重新播放开屏 |
 | 侧栏 / 输入框颜色没变 | Codex 更新改了 token。跑 `npm run probe` 看注入结果，见下 |
 | 开屏放完窗口很小 | 上一次动画中途被强杀。下次启动会自动还原，或托盘 → 恢复窗口尺寸 |
@@ -175,7 +188,9 @@ src/main/         主进程
   cdp.js          CDP 客户端 + 主题注入器
   launch.js       启动 Codex、找调试端口、退出旧实例
   theme.js        设置 + 皮肤 + 背景图 → 注入用的 CSS
-  entry.js        桌面/开始菜单的 Codex.lnk
+  watcher.js      官方入口侦测（400ms 轮询，只认「从零到有」）
+  processes.js    koffi 枚举进程（整轮约 3.6ms）
+  entry.js        旧版 .lnk 的识别与清理（2.1 起不再创建）
   tray.js         托盘
 src/shared/       纯函数（有单测，渲染层与主进程共用）
   portal.js       归一化矩形 → 像素矩形、入场时间

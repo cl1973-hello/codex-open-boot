@@ -103,11 +103,25 @@ test('sanitizeSettings clamps hostile values (schema v2)', () => {
 
   assert.equal(settings.codex.launch, 'alias');
   assert.equal(settings.window.endMode, 'fill');
+  // 官方入口侦测默认开着，轮询间隔被夹回合法区间
+  assert.equal(settings.watch.official, true);
+  assert.equal(sanitizeSettings({ watch: { official: false } }).watch.official, false);
+  assert.equal(sanitizeSettings({ watch: { intervalMs: 1 } }).watch.intervalMs, 150);
+  assert.equal(sanitizeSettings({ watch: { intervalMs: 99999 } }).watch.intervalMs, 3000);
 
   assert.equal(settings.schemaVersion, 2);
   // v1 的工作台状态必须被丢掉，不能留在 settings.json 里
   assert.equal(settings.recentProjects, undefined);
-  assert.deepEqual(Object.keys(settings).sort(), ['background', 'codex', 'schemaVersion', 'skinId', 'splash', 'ui', 'window']);
+  assert.deepEqual(Object.keys(settings).sort(), [
+    'background',
+    'codex',
+    'schemaVersion',
+    'skinId',
+    'splash',
+    'ui',
+    'watch',
+    'window',
+  ]);
 });
 
 test('sanitizeSettings migrates a v1 file without throwing', () => {

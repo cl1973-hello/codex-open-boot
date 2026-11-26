@@ -29,6 +29,12 @@ const DEFAULT_SETTINGS = {
   codex: {
     launch: 'alias', // alias（执行别名，保包身份）| exe（直启安装目录里的 exe）
   },
+  watch: {
+    // 用户点开始菜单/搜索里的官方 Codex 时，把开屏抢过来。
+    // 官方入口是 MSIX 执行别名，没有 .lnk 可改，只能常驻侦测。
+    official: true,
+    intervalMs: 400, // 进程扫描间隔；koffi 枚举一次约 3ms
+  },
   window: {
     endMode: 'fill', // fill（铺满工作区）| keep（保持 Codex 原尺寸）
   },
@@ -84,6 +90,7 @@ function sanitizeSettings(raw) {
   const bg = isPlainObject(merged.background) ? merged.background : {};
   const splash = isPlainObject(merged.splash) ? merged.splash : {};
   const codex = isPlainObject(merged.codex) ? merged.codex : {};
+  const watch = isPlainObject(merged.watch) ? merged.watch : {};
   const win = isPlainObject(merged.window) ? merged.window : {};
   const ui = isPlainObject(merged.ui) ? merged.ui : {};
 
@@ -112,6 +119,10 @@ function sanitizeSettings(raw) {
     },
     codex: {
       launch: codex.launch === 'exe' ? 'exe' : 'alias',
+    },
+    watch: {
+      official: watch.official !== false,
+      intervalMs: Math.round(clamp(watch.intervalMs, 150, 3000, 400)),
     },
     window: {
       endMode: win.endMode === 'keep' ? 'keep' : 'fill',

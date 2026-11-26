@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0a7ea4?style=flat-square)](#requirements)
 [![Electron](https://img.shields.io/badge/Electron-45-47848f?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 
-[中文](README.md) · [Download](https://github.com/cl1973-hello/codex-open-boot/releases/latest) · [Hard limits](#four-hard-limits) · [Troubleshooting](#troubleshooting)
+[中文](README.md) · [Download](https://github.com/cl1973-hello/codex-open-boot/releases/latest) · [Hard limits](#five-hard-limits) · [Troubleshooting](#troubleshooting)
 
 </div>
 
@@ -25,7 +25,7 @@
 
 | What you see | What actually happens |
 | --- | --- |
-| You double-click "Codex" on the desktop | A `.lnk` that points at *this* program, not the official entry |
+| You click **Codex** in the Start menu (the official tile) | A 400 ms process poll in the tray notices a fresh `ChatGPT.exe` and grabs the screen instantly |
 | A 10-second starfield splash | A full-screen frameless window playing `video.mp4` |
 | The screen inside the footage "grows" | Every frame issues `SetWindowPos` on the **real** Codex window, following that rectangle |
 | The splash fades and the UI is already there | The splash window drops `setOpacity` to 0, then destroys itself; Codex is already laid out underneath |
@@ -35,21 +35,24 @@ Codex is already rendering when the entrance happens — it grows *underneath* t
 
 ---
 
-## Four hard limits
+## Five hard limits
 
 These are not "not implemented yet". They are ceilings imposed by the approach itself. Stated up front so you do not waste an evening on them.
 
 **1. Windows + Microsoft Store Codex only.**
 The install path comes from `Get-AppxPackage OpenAI.Codex` and the launch goes through the execution alias. Portable builds and other platforms will not work.
 
-**2. It restarts a Codex that is already running.**
-Injecting a theme requires `--remote-debugging-port` at launch, and Codex holds a single-instance lock — the second launch's arguments are simply dropped. So this tool makes the running Codex exit, then relaunches it with the flag.
-A Codex that was *already* started by this tool (debug port present) is adopted as-is, no restart.
+**2. Taking over means restarting Codex once.**
+Injecting a theme requires `--remote-debugging-port` at launch, and Codex holds a single-instance lock — a second launch's arguments are simply dropped. So after you click the official tile, this tool ends that just-started instance and relaunches it with the flag.
+A Codex that was *already* started by this tool (debug port present) is adopted as-is, no restart. And if Codex is already running, clicking the tile only focuses the window — the splash does not replay.
 
-**3. The entrance cannot be earlier than ~9.2 s into the video.**
+**3. The tray process has to stay alive.**
+Detection is that 400 ms poll. Once you pick **Quit** from the tray, clicking the official tile gives you plain Codex — no splash, no theme. This is the one thing worth remembering.
+
+**4. The entrance cannot be earlier than ~9.2 s into the video.**
 Codex has a `WM_GETMINMAXINFO` floor of 793×991 **physical pixels**. That cannot be lowered. The rectangle in your footage has to be large enough to hold that window, which at 165% scaling happens at 9.22 s. The number is recomputed on every run (`findEntryTime`) rather than hard-coded, but your video cannot be shorter than it.
 
-**4. Reskin only, no layout changes.**
+**5. Reskin only, no layout changes.**
 What gets injected is colours, a background image and transparency — no moved buttons, no resized type, no rearranged panels. Want a different layout? Patch Codex itself.
 
 ---
@@ -57,8 +60,8 @@ What gets injected is colours, a background image and transparency — no moved 
 ## 30-second setup
 
 1. Open [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest) and download the file whose name ends with `-portable.exe`.
-2. Run it. On first launch it asks whether to take over the "Codex" entry — say yes.
-3. From then on, double-clicking **Codex** on the desktop means "splash → themed Codex".
+2. Run it. It plays the splash once, then drops into the tray — **leave it there**, that tray process is what watches the official entry.
+3. From then on, click **Codex** in the Start menu or search exactly as you always have; the splash grabs the screen for you.
 
 > The binary is not code-signed, so Windows will show "Windows protected your PC". Click **More info → Run anyway**.
 > It needs no administrator rights and never writes into the Codex install directory.
@@ -72,11 +75,14 @@ Tray → **Settings** opens the panel above: three skins, background image (opac
 ## How it works
 
 ```
-Double-click Codex.lnk
+Click Codex in the Start menu (the official tile)
+   │
+   ├─ The 400 ms poll in the tray sees ChatGPT.exe go from "none" to "some" (3 ms to react, measured)
    │
    ├─ Full-screen splash appears instantly (poster underneath, so the video join does not flash)
    │
-   ├─ Background: quit the old Codex → relaunch it with 5 debug flags → wait for DevToolsActivePort
+   ├─ Background: end that just-started instance → relaunch with 5 debug flags → wait for DevToolsActivePort
+   │    (the fresh instance has no debug port, so a theme cannot be injected into it)
    │
    ├─ Connect CDP to app://-/index.html, inject <style id="cob-theme">
    │    · 31 --app-color-* / --codex-theme-* semantic tokens
@@ -90,6 +96,12 @@ Double-click Codex.lnk
    │
    └─ Splash fades out in 240 ms → destroyed → focus handed to Codex → app stays in the tray
 ```
+
+> Why the shortcut cannot just be rewritten: the official Codex is an MSIX **execution alias**
+> (`%LOCALAPPDATA%\Microsoft\WindowsApps\chatgpt-desktop.exe`). There is no `.lnk` to edit and no
+> way to append launch arguments to it. Hence "see it start → grab the screen → relaunch with our flags".
+> The trigger is strictly zero-to-nonzero: subprocesses Codex spawns while running do not count,
+> otherwise a window you are actively using would get killed and reopened.
 
 Facts that came out of the M0 spikes (full log in [`.m0/M0-REPORT.md`](.m0/M0-REPORT.md)):
 
@@ -144,7 +156,9 @@ The log is at `%APPDATA%\CodexOpenBoot\launcher.log` (tray → Open log).
 
 | Symptom | Cause / fix |
 | --- | --- |
-| Double-clicking Codex does nothing | Check the app is in the tray; check the shortcut target points at this program |
+| Clicking Codex gives no splash | The tray process is not running (you quit it). Start the app again; it drops back to the tray |
+| Codex flashes briefly before the splash | Expected: the takeover ends the fresh official instance and relaunches it, ~1.5 s, and the splash is usually already on top |
+| Codex restarts on its own while I work | It should not. Send the log — the trigger is zero-to-nonzero only; subprocesses spawned while running are never taken over |
 | The UI is still light | Codex was not started by this tool. Tray → Replay splash |
 | Sidebar / input colours unchanged | A Codex update changed the tokens. Run `npm run probe` and read the injection result |
 | Window is tiny after the splash | The previous run was killed mid-animation. Restored automatically next launch, or tray → Restore Codex window |
@@ -179,7 +193,9 @@ src/main/         Main process
   cdp.js          CDP client + theme injector
   launch.js       Launch Codex, find the debug port, quit stale instances
   theme.js        Settings + skins + background → CSS for injection
-  entry.js        The Codex.lnk on desktop / start menu
+  watcher.js      Official-entry detection (400 ms poll, zero-to-nonzero only)
+  processes.js    koffi process enumeration (~3.6 ms per full sweep)
+  entry.js        Detecting / cleaning up legacy .lnk files (2.1 creates none)
   tray.js         Tray menu
 src/shared/       Pure functions (unit tested, shared by main and renderer)
   portal.js       Normalised rect → pixel rect, entrance time

@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * Codex Open Boot：双击「Codex」-> 播开屏 -> 真实 Codex 窗口按视频长大 -> 铺满。
- * 交接完就驻留托盘，不再有自己的工作台。
+ * Codex Open Boot：点官方的 Codex 入口 -> 播开屏 -> 真实 Codex 窗口按视频长大 -> 铺满。
+ * 交接完就驻留托盘，继续盯着官方入口，不再有自己的工作台。
  */
 
 const fs = require('fs');
 const path = require('path');
-const { app, screen, dialog } = require('electron');
+const { app, screen } = require('electron');
 
 // 必须在 ready 之前：设置与素材都放 %APPDATA%\CodexOpenBoot，和安装目录无关
 app.setPath('userData', path.join(app.getPath('appData'), 'CodexOpenBoot'));
@@ -27,7 +27,9 @@ const paths = require('./paths');
 const theme = require('./theme');
 const { SettingsStore } = require('./settings-store');
 const { Boot } = require('./boot');
+const { OfficialWatcher } = require('./watcher');
 const { registerIpc } = require('./ipc');
+const launch = require('./launch');
 const entry = require('./entry');
 const trayModule = require('./tray');
 const windows = require('./window');
@@ -37,6 +39,8 @@ const PANEL_HTML = path.join(__dirname, '..', 'renderer', 'panel.html');
 const state = {
   store: null,
   boot: null,
+  watcher: null,
+  preempt: null,
   skins: null,
   panel: null,
   quitting: false,
@@ -45,7 +49,9 @@ const state = {
 function trayActions() {
   return {
     boot: state.boot,
+    store: state.store,
     openPanel: fs.existsSync(PANEL_HTML) ? openPanel : null,
+    toggleWatch: setWatchOfficial,
     quit: quitApp,
   };
 }
@@ -79,69 +85,93 @@ function quitApp() {
 }
 
 /**
- * 首次运行问一次「要不要接管桌面/开始菜单的 Codex 入口」。
+ * 2.0 的做法是在桌面和开始菜单放一个叫「Codex」的 .lnk 指向本程序。
  *
- * 只问一次：答完（无论选哪个）就把 ui.onboardedAt 写下来。否则用户选了「以后再说」，
- * 每次开机都弹一次。已经指向我们的快捷方式就直接跳过。
+ * 2.1 起改为直接盯官方入口（开始菜单/搜索里的 MSIX 磁贴），所以那些自己建的
+ * 快捷方式要清掉 —— 留着就是两套入口：点桌面那个走一套时序，点官方那个走另一套，
+ * 用户根本分不清哪次会播动画。只删「目标确实是我们」的，用户自己的 Codex 快捷方式不动。
  */
-async function maybeOfferEntry() {
-  const settings = state.store.get();
-  if (settings.ui && settings.ui.entryAskedAt) return;
-
-  let owns = false;
+function retireShortcuts() {
+  let status = null;
   try {
-    const current = entry.status({ app });
-    owns = !!(current.ownsDesktop || current.ownsStartMenu);
+    status = entry.status({ app });
   } catch (error) {
     logger.warn(`读取快捷方式状态失败: ${error.message}`);
+    return;
+  }
+  if (!status.ownsDesktop && !status.ownsStartMenu) return;
+  try {
+    const result = entry.remove({ app });
+    logger.info(`已移除 2.0 留下的「Codex」快捷方式：${JSON.stringify(result.removed)}`);
+  } catch (error) {
+    logger.warn(`移除旧快捷方式失败: ${error.message}`);
+  }
+}
+
+/** 开屏正在跑的时候，抢屏会互相打架；直接让这次点击走正常路径 */
+function bootBusy() {
+  return !!(state.boot && state.boot.phase === 'running');
+}
+
+async function runOfficial() {
+  if (bootBusy()) {
+    logger.info('已有一次开屏在进行，忽略这次官方入口');
+    return;
+  }
+  const result = await state.boot.run({ reason: 'official', preemptPids: state.preempt });
+  logger.info(
+    `开屏结束（官方入口）：ok=${result.ok} ${result.elapsed}ms${result.error ? ` 错误=${result.error}` : ''}`,
+  );
+  trayModule.refresh(trayActions());
+}
+
+/**
+ * 常驻盯官方入口。
+ *
+ * 官方 Codex 是 MSIX 执行别名：没有 .lnk 可改，也不能给它加启动参数，
+ * 所以「点官方图标也有开屏」只能这样实现 —— 看见新的 ChatGPT.exe 出现就抢屏，
+ * 再把那个刚起来的实例结束掉、用自己的调试参数重拉（没有端口就注入不了主题）。
+ */
+function startWatcher() {
+  if (state.watcher) return state.watcher;
+  const settings = state.store.get();
+  if (!settings.watch.official) {
+    logger.info('官方入口侦测已关闭（settings.watch.official = false）');
+    return null;
   }
 
-  if (!owns) {
-    let response = null;
-    try {
-      // 从后台进程弹模态框，Windows 的焦点窃取防护会把它压住（实测卡过 49 秒，
-      // 用户以为双击没反应）。先抢一次焦点，再给 12 秒上限：超时就当这次没问成，
-      // 不写 entryAskedAt，下次启动还会问。
-      app.focus({ steal: true });
-      const answer = await Promise.race([
-        dialog.showMessageBox({
-          type: 'question',
-          buttons: ['创建「Codex」快捷方式', '以后再说'],
-          defaultId: 0,
-          cancelId: 1,
-          noLink: true,
-          title: 'Codex Open Boot',
-          message: '把桌面和开始菜单的「Codex」指向本程序？',
-          detail:
-            '创建之后，双击 Codex 就是「开屏动画 → 主题化 Codex」。\n随时可以在托盘菜单里移除。',
-        }),
-        new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
-      ]);
-      response = answer ? answer.response : null;
-    } catch (error) {
-      logger.warn(`首次询问失败: ${error.message}`);
-    }
-
-    if (response === null) {
-      logger.warn('首次询问超时（对话框可能被前台窗口挡住），本次跳过，下次启动再问');
-      return;
-    }
-
-    if (response === 0) {
+  state.watcher = new OfficialWatcher({
+    scan: () => launch.pids(),
+    intervalMs: settings.watch.intervalMs,
+    log: logger,
+    onDetect: async (pids) => {
+      // 把「要点杀的 pid」挂在 state 上，交给 runOfficial 传给 boot
+      state.preempt = pids;
       try {
-        const result = entry.install({ app });
-        logger.info(
-          `创建快捷方式：ok=${result.ok} 数量=${result.created.length} 图标=${result.icon || '（默认）'}`,
-        );
-        if (!result.ok) logger.warn(`创建快捷方式失败：${result.reason}`);
-      } catch (error) {
-        logger.warn(`创建快捷方式异常: ${error.message}`);
+        await runOfficial();
+      } finally {
+        state.preempt = null;
       }
-    }
-  }
+    },
+  });
+  state.watcher.start();
+  return state.watcher;
+}
 
-  state.store.patch({ ui: { entryAskedAt: new Date().toISOString() } });
+/** 托盘里切换「官方入口触发」，立即生效 */
+function setWatchOfficial(enabled) {
+  const next = !!enabled;
+  state.store.patch({ watch: { official: next } });
   state.store.saveNow();
+  if (next) {
+    startWatcher();
+  } else if (state.watcher) {
+    state.watcher.stop();
+    state.watcher = null;
+  }
+  logger.info(`官方入口触发开屏：${next ? '开' : '关'}`);
+  trayModule.refresh(trayActions());
+  return next;
 }
 
 async function start() {
@@ -170,6 +200,7 @@ async function start() {
   });
 
   trayModule.create(trayActions());
+  retireShortcuts();
 
   if (process.argv.includes('--panel')) {
     openPanel();
@@ -184,15 +215,9 @@ async function start() {
   );
   trayModule.refresh(trayActions());
 
-  // 询问放在开屏之后：双击的第一反馈必须是动画，而不是一个可能被压住的对话框。
-  // 探针只关心动画与注入，不要弹窗打断
-  if (!process.env.COB_PROBE) {
-    try {
-      await maybeOfferEntry();
-    } catch (error) {
-      logger.warn(`首启询问失败: ${error.message}`);
-    }
-  }
+  // 开屏交接完才开始盯：启动路径本身已经把 Codex 拉起来了，
+  // 这时候建基线不会把「自己拉起来的那个」误判成官方点击。
+  startWatcher();
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -231,6 +256,10 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     state.quitting = true;
+    if (state.watcher) {
+      state.watcher.stop();
+      state.watcher = null;
+    }
     if (state.store) state.store.saveNow();
     if (state.boot) state.boot.dispose();
     trayModule.destroy();

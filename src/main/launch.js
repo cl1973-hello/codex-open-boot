@@ -15,6 +15,9 @@ const { spawn, execFileSync } = require('child_process');
 const logger = require('./logger');
 const appx = require('./appx');
 const win32 = require('./win32');
+const processes = require('./processes');
+
+const CODEX_EXE = 'ChatGPT.exe';
 
 const DEBUG_ARGS = [
   '--remote-debugging-port=0',
@@ -34,17 +37,15 @@ function pwsh(script) {
   }).trim();
 }
 
-/** 所有 ChatGPT.exe 的 pid */
+/**
+ * 所有 ChatGPT.exe 的 pid。
+ *
+ * 原来每次都起一个 PowerShell `Get-Process`（400~700ms），轮询和退出等待都吃不消，
+ * 现在走 koffi 的 EnumProcesses（实测 3ms）；koffi 加载不到时 processes 内部会自动
+ * 降级回 PowerShell，调用方无感。
+ */
 function pids() {
-  try {
-    const out = pwsh('(Get-Process ChatGPT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id) -join ","');
-    return out
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isInteger(n) && n > 0);
-  } catch {
-    return [];
-  }
+  return processes.pidsByName(CODEX_EXE);
 }
 
 function mainPid() {
@@ -117,6 +118,22 @@ async function ensureNotRunning({ gracefulMs = 6000 } = {}) {
   throw new Error('Codex 无法退出，请手动关闭后重试');
 }
 
+/**
+ * 接手「用户刚从官方入口点起来的那一个」：立即结束，不等它自己退。
+ *
+ * 和 ensureNotRunning 的区别是目的不同：那个是要保住用户正在用的窗口（先 WM_CLOSE），
+ * 这个针对的是刚起来几百毫秒、还没画出窗口、也没写过任何用户数据的实例 ——
+ * 等它优雅退出纯属浪费，还会让开屏黑屏好几秒。
+ */
+async function terminateAll(list, { timeoutMs = 4000 } = {}) {
+  const targets = (list || []).filter((n) => Number.isInteger(n) && n > 0);
+  if (!targets.length) return { ok: true, killed: [], left: [] };
+  const result = await processes.killAll(targets, { timeoutMs });
+  if (result.ok) logger.info(`已结束刚启动的 Codex（pid ${result.killed.join(',')}）`);
+  else logger.warn(`有些 Codex 进程没能结束：${result.left.join(',')}`);
+  return result;
+}
+
 async function fetchJson(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -179,11 +196,13 @@ async function launchAndWait({ launch = 'alias', timeoutMs = 45000, onProgress }
 
 module.exports = {
   DEBUG_ARGS,
+  CODEX_EXE,
   isRunning,
   mainPid,
   pids,
   findPortFile,
   ensureNotRunning,
+  terminateAll,
   launchAndWait,
   fetchJson,
 };

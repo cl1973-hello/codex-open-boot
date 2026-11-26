@@ -296,7 +296,12 @@ class Boot {
 
   // ---------------------------------------------------------------- 启动链
 
-  async run({ reason = 'launch' } = {}) {
+  /**
+   * @param {{reason?:string, preemptPids?:number[]}} options
+   *   preemptPids：用户点了官方入口，那一个实例是刚起来的、没有调试端口。
+   *   我们要做的是开屏 -> 把它结束掉 -> 用自己的参数重拉，否则主题注入不了。
+   */
+  async run({ reason = 'launch', preemptPids = null } = {}) {
     if (this.phase === 'running') return { ok: false, reason: 'busy' };
 
     this.phase = 'running';
@@ -331,11 +336,20 @@ class Boot {
     this.openSplash();
 
     try {
+      // 官方入口点起来的那一个：开屏已经盖住屏幕了，现在把它关掉重拉。
+      // 顺序不能反 —— 先出画面，用户才不会看到「点了没反应」；实测杀掉只要 100~300ms。
+      if (preemptPids && preemptPids.length) {
+        this.note2renderer('正在接管 Codex…');
+        const killed = await launch.terminateAll(preemptPids);
+        if (!killed.ok) logger.warn('有实例没结束，继续尝试启动');
+      }
+
       // 探针要量的是「入场 → 逐帧缩放 → 尾段 → 交接」这条完整路径。
       // 复用已有实例会直接跳到收尾（不到 1 秒），测出来全是 null，所以探针不复用。
       const probing = !!process.env.COB_PROBE;
-      // Codex 已经在跑：能挂上调试端口就直接复用，不打断用户
-      if (!probing && launch.isRunning()) {
+      // Codex 已经在跑：能挂上调试端口就直接复用，不打断用户。
+      // 接管官方入口时不走这条 —— 那个实例没有端口，而且我们本来就打算重拉。
+      if (!probing && !(preemptPids && preemptPids.length) && launch.isRunning()) {
         const reused = await this.reuseExisting();
         if (reused) {
           logger.info('Codex 已在运行且可注入，复用现有实例');
