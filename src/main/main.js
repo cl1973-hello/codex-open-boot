@@ -97,22 +97,34 @@ async function maybeOfferEntry() {
   }
 
   if (!owns) {
-    let response = 1;
+    let response = null;
     try {
-      const answer = await dialog.showMessageBox({
-        type: 'question',
-        buttons: ['创建「Codex」快捷方式', '以后再说'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-        title: 'Codex Open Boot',
-        message: '把桌面和开始菜单的「Codex」指向本程序？',
-        detail:
-          '创建之后，双击 Codex 就是「开屏动画 → 主题化 Codex」。\n随时可以在托盘菜单里移除。',
-      });
-      response = answer.response;
+      // 从后台进程弹模态框，Windows 的焦点窃取防护会把它压住（实测卡过 49 秒，
+      // 用户以为双击没反应）。先抢一次焦点，再给 12 秒上限：超时就当这次没问成，
+      // 不写 entryAskedAt，下次启动还会问。
+      app.focus({ steal: true });
+      const answer = await Promise.race([
+        dialog.showMessageBox({
+          type: 'question',
+          buttons: ['创建「Codex」快捷方式', '以后再说'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          title: 'Codex Open Boot',
+          message: '把桌面和开始菜单的「Codex」指向本程序？',
+          detail:
+            '创建之后，双击 Codex 就是「开屏动画 → 主题化 Codex」。\n随时可以在托盘菜单里移除。',
+        }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 12000)),
+      ]);
+      response = answer ? answer.response : null;
     } catch (error) {
       logger.warn(`首次询问失败: ${error.message}`);
+    }
+
+    if (response === null) {
+      logger.warn('首次询问超时（对话框可能被前台窗口挡住），本次跳过，下次启动再问');
+      return;
     }
 
     if (response === 0) {
@@ -164,6 +176,15 @@ async function start() {
     return;
   }
 
+  const result = await state.boot.run({ reason: 'launch' });
+  logger.info(
+    `开屏结束：ok=${result.ok} ${result.elapsed}ms${result.reused ? '（复用已有实例）' : ''}${
+      result.error ? ` 错误=${result.error}` : ''
+    }`,
+  );
+  trayModule.refresh(trayActions());
+
+  // 询问放在开屏之后：双击的第一反馈必须是动画，而不是一个可能被压住的对话框。
   // 探针只关心动画与注入，不要弹窗打断
   if (!process.env.COB_PROBE) {
     try {
@@ -172,14 +193,6 @@ async function start() {
       logger.warn(`首启询问失败: ${error.message}`);
     }
   }
-
-  const result = await state.boot.run({ reason: 'launch' });
-  logger.info(
-    `开屏结束：ok=${result.ok} ${result.elapsed}ms${result.reused ? '（复用已有实例）' : ''}${
-      result.error ? ` 错误=${result.error}` : ''
-    }`,
-  );
-  trayModule.refresh(trayActions());
 }
 
 const gotLock = app.requestSingleInstanceLock();
