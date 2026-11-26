@@ -198,6 +198,8 @@ class Boot {
 
     // 渲染层没起来（bundle 缺失等）时不能把整个启动卡住
     this.after(4000, () => {
+      // 复用已有实例的开屏只活几百毫秒，窗口早关了，这时候再报「没上报布局」纯属噪音
+      if (this.phase !== 'running' || !this.splashWindow) return;
       if (!this.normalized) logger.warn('开屏页没有上报布局，动画将退化为直接铺满');
     });
 
@@ -323,7 +325,9 @@ class Boot {
       this.passiveInjector = null;
     }
 
-    logger.info(`开始开屏（${reason}）：素材=${this.media.ok ? 'ok' : '缺失'} 帧=${this.media.frames.length}`);
+    logger.info(
+      `开始开屏（${reason}）：素材=${this.media.ok ? 'ok' : '缺失'} 帧=${this.media.frames.length} 目录=${this.media.mediaSource || '?'}`,
+    );
     this.openSplash();
 
     try {

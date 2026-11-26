@@ -52,7 +52,7 @@ Codex 窗口有 `WM_GETMINMAXINFO` 定下的 793×991 **物理像素**最小尺�
 
 ## 30 秒上手
 
-1. 打开 [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest)，下载 `CodexOpenBoot-2.0.0-win-x64-portable.exe`。
+1. 打开 [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest)，下载名字以 `-portable.exe` 结尾的那个。
 2. 运行它。第一次会问你要不要接管「Codex」入口 —— 选创建。
 3. 之后双击桌面的 **Codex** 就是「开屏动画 → 主题化 Codex」。
 

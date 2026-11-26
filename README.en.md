@@ -56,7 +56,7 @@ What gets injected is colours, a background image and transparency — no moved 
 
 ## 30-second setup
 
-1. Open [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest) and download `CodexOpenBoot-2.0.0-win-x64-portable.exe`.
+1. Open [Releases](https://github.com/cl1973-hello/codex-open-boot/releases/latest) and download the file whose name ends with `-portable.exe`.
 2. Run it. On first launch it asks whether to take over the "Codex" entry — say yes.
 3. From then on, double-clicking **Codex** on the desktop means "splash → themed Codex".
 

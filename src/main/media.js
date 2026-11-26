@@ -81,14 +81,74 @@ function resolveInside(root, name) {
 }
 
 /**
+ * 把内置素材同步一份到 userData，之后 file:// 一律指向这份副本。
+ *
+ * 起因是一个只在便携版出现的坑：portable.exe 每次运行都会先清空同一个临时解压目录
+ * 再解压。程序已经在跑时再双击一次，第二个实例的 wrapper 会把第一个实例正在用的
+ * `resources/media` 整个删掉，随后自己因为单实例锁立刻退出 —— 结果是先跑着的那个实例
+ * 从此再也读不到 video.mp4，每次开屏都 `video-error`。
+ *
+ * 只按文件大小判断是否需要复制：素材更新时视频体积几乎必然变化，而解压出来的 mtime
+ * 每次都是新的，不能拿它当依据。
+ */
+function ensureStableMedia(userDataDir, mediaDir) {
+  const dst = path.join(userDataDir, 'media');
+  let names = null;
+  try {
+    names = fs.readdirSync(mediaDir);
+  } catch {
+    // 源目录已经没了（就是上面那个场景），能用副本就用副本
+    return { dir: fs.existsSync(dst) ? dst : mediaDir, copied: 0, source: 'missing' };
+  }
+
+  try {
+    fs.mkdirSync(dst, { recursive: true });
+    let copied = 0;
+    for (const name of names) {
+      const src = path.join(mediaDir, name);
+      let stat = null;
+      try {
+        stat = fs.statSync(src);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile()) continue;
+
+      const out = path.join(dst, name);
+      let same = false;
+      try {
+        same = fs.statSync(out).size === stat.size;
+      } catch {
+        same = false;
+      }
+      if (same) continue;
+
+      try {
+        fs.copyFileSync(src, out);
+        copied += 1;
+      } catch {
+        // 写不进去（磁盘满 / 只读）就退回原始目录，宁可下次再试也不能因此开不了屏
+        return { dir: mediaDir, copied, source: 'copy-failed' };
+      }
+    }
+    return { dir: dst, copied, source: copied > 0 ? 'copied' : 'cached' };
+  } catch {
+    return { dir: mediaDir, copied: 0, source: 'mkdir-failed' };
+  }
+}
+
+/**
  * @param {{userDataDir:string, mediaDir:string}} dirs
  * @returns {{
  *   ok: boolean, source: string|null, video: string|null, poster: string|null,
  *   fit: 'cover'|'contain', zoom: number, duration: number,
- *   transitionStart: number, transitionEnd: number, frames: Array<object>
+ *   transitionStart: number, transitionEnd: number, frames: Array<object>,
+ *   mediaDir: string, mediaSource: string
  * }}
  */
-function load({ userDataDir, mediaDir }) {
+function load({ userDataDir, mediaDir: bundledDir }) {
+  const stable = ensureStableMedia(userDataDir, bundledDir);
+  const mediaDir = stable.dir;
   const candidates = [path.join(userDataDir, 'theme.json'), path.join(mediaDir, 'theme.json')];
   let source = null;
   let raw = null;
@@ -122,6 +182,8 @@ function load({ userDataDir, mediaDir }) {
     transitionStart,
     transitionEnd,
     frames,
+    mediaDir,
+    mediaSource: stable.source,
   };
 }
 

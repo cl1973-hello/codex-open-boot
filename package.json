@@ -1,6 +1,6 @@
 {
   "name": "codex-open-boot",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Animated splash screen + UI theme injected into the real Codex desktop client",
   "private": true,
   "main": "src/main/main.js",
